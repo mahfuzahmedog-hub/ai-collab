@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useStore } from "@/store";
-import { connect, getProjectId, sendCommand } from "@/lib/websocket";
+import { connect } from "@/lib/websocket";
 import { Sidebar } from "@/components/shared/Sidebar";
 import { Workspace } from "@/components/workspace/index";
 import { AgentsPage } from "@/components/agents/Panel";
@@ -15,11 +15,6 @@ export default function Home() {
 
   useEffect(() => {
     connect();
-    const pid = getProjectId();
-    const timer = setTimeout(() => {
-      sendCommand("create_project", { title: "My Project", description: "New AI collaboration project" });
-    }, 500);
-    return () => clearTimeout(timer);
   }, []);
 
   return (

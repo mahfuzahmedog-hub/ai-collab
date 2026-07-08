@@ -63,21 +63,16 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
     from app.models.agent import AgentRole
 
     if command == "create_project":
-        title = args.get("title", "Untitled Project")
-        description = args.get("description", "")
-        project = Project(title=title, description=description, id=project_id)
-        boss = await agent_manager.create_boss(project_id)
-        await boss.initialize_project(project)
-        await ws.send_text(json.dumps({
-            "type": "project_created",
-            "project_id": project_id,
-            "boss_name": boss.name,
-        }))
-        agents = agent_manager.list_agents(project_id)
-        await ws_manager.broadcast(project_id, {
-            "type": "status",
-            "agents": agents,
-        })
+        try:
+            title = args.get("title", "Untitled Project")
+            description = args.get("description", "")
+            project = Project(title=title, description=description, id=project_id)
+            boss = await agent_manager.create_boss(project_id)
+            await boss.initialize_project(project)
+            agents = agent_manager.list_agents(project_id)
+            await ws_manager.broadcast(project_id, {"type": "status", "agents": agents})
+        except Exception as e:
+            logger.error("Failed to create project: %s", e)
 
     elif command == "delegate":
         task_title = args.get("task", "")

@@ -4,6 +4,7 @@ import { useStore } from "@/store";
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let projectId = "";
+let projectInitialized = false;
 
 function getStorageItem(key: string): string | null {
   try {
@@ -55,6 +56,10 @@ export function connect() {
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
+    }
+    if (!projectInitialized) {
+      projectInitialized = true;
+      sendCommand("create_project", { title: "My Project", description: "New AI collaboration project" });
     }
   };
 
