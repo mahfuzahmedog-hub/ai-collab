@@ -25,10 +25,18 @@ export function Workspace() {
       <div className="flex-1 overflow-y-auto scrollbar-thin py-2">
         {messages.length === 0 && (
           <div className="flex items-center justify-center h-full text-dark-500">
-            <div className="text-center">
-              <p className="text-lg mb-2">Welcome to the AI Collaboration Platform</p>
-              <p className="text-sm">Agents will appear here once the Boss creates your team.</p>
-              <p className="text-sm mt-2">Type a message to start your project!</p>
+            <div className="text-center max-w-md">
+              <div className="text-4xl mb-4">👑</div>
+              <p className="text-lg font-semibold text-white mb-2">Your Boss Agent is Ready</p>
+              <p className="text-sm text-dark-400 mb-3">
+                The Boss Agent is your engineering manager. Describe your project and it will assemble a team of specialized AI agents to build it.
+              </p>
+              <div className="text-xs text-dark-500 space-y-1">
+                <p>💬 Tell the Boss what you want to build</p>
+                <p>🤖 Agents are created and assigned tasks automatically</p>
+                <p>📋 Track progress on the Task Board</p>
+              </div>
+              <p className="text-sm text-accent-400 mt-4">Type a message to start your project!</p>
             </div>
           </div>
         )}
