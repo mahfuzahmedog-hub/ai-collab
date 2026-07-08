@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 websockets
+redis
 aiosqlite
 sqlalchemy
 pydantic
