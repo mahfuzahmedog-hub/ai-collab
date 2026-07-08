@@ -27,8 +27,8 @@ class Project(BaseModel):
     requirements: str = ""
     deliverables: list[str] = Field(default_factory=list)
     knowledge_base: dict = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    updated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
 
     class Config:
         use_enum_values = True

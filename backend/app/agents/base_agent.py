@@ -36,7 +36,7 @@ class BaseAgent:
     @status.setter
     def status(self, value: AgentStatus):
         self.agent.status = value
-        self.agent.last_active = datetime.utcnow()
+        self.agent.last_active = datetime.utcnow().isoformat() + "Z"
 
     async def think(self, prompt: str, temperature: Optional[float] = None) -> str:
         self.status = AgentStatus.thinking

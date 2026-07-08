@@ -74,6 +74,7 @@ export function connect() {
 
   ws.onclose = () => {
     useStore.getState().setConnected(false);
+    projectInitialized = false;
     reconnectTimer = setTimeout(() => connect(), 3000);
   };
 

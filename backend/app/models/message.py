@@ -4,6 +4,10 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+def utcnow_str() -> str:
+    return datetime.utcnow().isoformat() + "Z"
+
+
 class Message(BaseModel):
     id: str = Field(default_factory=lambda: f"msg-{uuid.uuid4().hex[:8]}")
     project_id: str
@@ -16,4 +20,4 @@ class Message(BaseModel):
     mentions: list[str] = Field(default_factory=list)
     attachments: list[dict] = Field(default_factory=list)
     metadata: dict = Field(default_factory=dict)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: str = Field(default_factory=utcnow_str)

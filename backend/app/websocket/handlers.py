@@ -1,10 +1,11 @@
 import json
 import logging
+from datetime import datetime
+from uuid import uuid4
 from fastapi import WebSocket, WebSocketDisconnect
 from app.websocket.manager import ws_manager
 from app.core.event_bus import event_bus
 from app.services.agent_manager import agent_manager
-from app.services.message_broker import message_broker
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +33,18 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                     sender = data.get("sender_name", "User")
                     msg = {
                         "type": "message",
+                        "id": f"msg-{uuid4().hex[:8]}",
                         "project_id": project_id,
                         "sender_id": user_id,
                         "sender_name": sender,
                         "sender_role": "user",
                         "content": content,
                         "msg_type": "chat",
+                        "reply_to": None,
+                        "mentions": [],
+                        "attachments": [],
+                        "metadata": {},
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
                     }
                     await event_bus.publish("message", msg)
 
@@ -71,8 +78,17 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             await boss.initialize_project(project)
             agents = agent_manager.list_agents(project_id)
             await ws_manager.broadcast(project_id, {"type": "status", "agents": agents})
+            await ws.send_text(json.dumps({
+                "type": "project_created",
+                "project_id": project_id,
+                "boss_name": boss.name,
+            }))
         except Exception as e:
             logger.error("Failed to create project: %s", e)
+            await ws.send_text(json.dumps({
+                "type": "error",
+                "message": f"Failed to create project: {e}",
+            }))
 
     elif command == "delegate":
         task_title = args.get("task", "")

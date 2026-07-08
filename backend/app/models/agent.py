@@ -4,6 +4,10 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+def utcnow_str() -> str:
+    return datetime.utcnow().isoformat() + "Z"
+
+
 class AgentStatus(str, enum.Enum):
     idle = "idle"
     thinking = "thinking"
@@ -56,8 +60,8 @@ class Agent(BaseModel):
     })
     project_id: str
     chat_history: list[dict] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    last_active: datetime = Field(default_factory=datetime.utcnow)
+    created_at: str = Field(default_factory=utcnow_str)
+    last_active: str = Field(default_factory=utcnow_str)
     provider: str = "openai"
     model: str = "gpt-4o-mini"
     temperature: float = 0.7
