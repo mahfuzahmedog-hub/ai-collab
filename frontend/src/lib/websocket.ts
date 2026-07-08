@@ -5,15 +5,31 @@ let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let projectId = "";
 
+function getStorageItem(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function setStorageItem(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* localStorage not available */
+  }
+}
+
 export function getProjectId(): string {
   if (projectId) return projectId;
-  const stored = localStorage.getItem("project_id");
+  const stored = getStorageItem("project_id");
   if (stored) {
     projectId = stored;
     return stored;
   }
   projectId = `proj-${Math.random().toString(36).slice(2, 10)}`;
-  localStorage.setItem("project_id", projectId);
+  setStorageItem("project_id", projectId);
   return projectId;
 }
 
@@ -21,12 +37,12 @@ export function connect() {
   if (ws?.readyState === WebSocket.OPEN) return;
 
   const pid = getProjectId();
-  const wsEnvUrl = process.env.NEXT_PUBLIC_WS_URL;
+  const wsEnvUrl = process.env.NEXT_PUBLIC_WS_URL || "";
   let url: string;
 
   if (wsEnvUrl) {
     const base = wsEnvUrl.replace(/^https?:\/\//, "").replace(/^ws[s]?:\/\//, "");
-    url = `${wsEnvUrl.startsWith("wss") ? "wss" : "wss"}://${base}/ws/${pid}/user`;
+    url = `wss://${base}/ws/${pid}/user`;
   } else {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     url = `${protocol}//localhost:8000/ws/${pid}/user`;

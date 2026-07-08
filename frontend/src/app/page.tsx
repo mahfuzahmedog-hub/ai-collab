@@ -16,7 +16,10 @@ export default function Home() {
   useEffect(() => {
     const pid = getProjectId();
     connect();
-    sendCommand("create_project", { title: "My Project", description: "New AI collaboration project" });
+    const interval = setInterval(() => {
+      sendCommand("create_project", { title: "My Project", description: "New AI collaboration project" });
+    }, 2000);
+    setTimeout(() => clearInterval(interval), 15000);
   }, []);
 
   return (
