@@ -13,17 +13,9 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
     await ws_manager.connect(websocket, project_id, user_id)
 
     async def on_event(data: dict):
-        await ws_manager.broadcast(project_id, {
-            "type": data.get("type", "event"),
-            **data,
-        })
+        await ws_manager.broadcast(project_id, data)
 
-    event_bus.subscribe("message", on_event)
-    event_bus.subscribe("task_created", on_event)
-    event_bus.subscribe("agent_created", on_event)
-    event_bus.subscribe("review_requested", on_event)
-    event_bus.subscribe("review_approved", on_event)
-    event_bus.subscribe("review_rejected", on_event)
+    event_bus.subscribe("*", on_event)
 
     try:
         while True:
@@ -81,6 +73,11 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             "project_id": project_id,
             "boss_name": boss.name,
         }))
+        agents = agent_manager.list_agents(project_id)
+        await ws_manager.broadcast(project_id, {
+            "type": "status",
+            "agents": agents,
+        })
 
     elif command == "delegate":
         task_title = args.get("task", "")

@@ -51,14 +51,14 @@ class BaseAgent:
                 provider=self.agent.provider,
                 temperature=temperature or self.agent.temperature,
             )
-            self.agent.chat_history.append({"role": "user", "content": prompt})
-            self.agent.chat_history.append({"role": "assistant", "content": response})
-            self.agent.memory["short_term"].append({"prompt": prompt, "response": response})
-            return response
         except Exception as e:
             logger.error("Agent %s think error: %s", self.name, e)
-            self.status = AgentStatus.idle
-            return f"[Error: {e}]"
+            response = f"I received your request but the LLM service is currently unavailable. Please ensure the configured provider ({self.agent.provider}) is running and accessible."
+        self.agent.chat_history.append({"role": "user", "content": prompt})
+        self.agent.chat_history.append({"role": "assistant", "content": response})
+        self.agent.memory["short_term"].append({"prompt": prompt, "response": response})
+        self.status = AgentStatus.idle
+        return response
 
     async def think_stream(self, prompt: str, temperature: Optional[float] = None) -> AsyncGenerator[str, None]:
         self.status = AgentStatus.thinking

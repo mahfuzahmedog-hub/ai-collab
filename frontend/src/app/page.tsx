@@ -14,12 +14,12 @@ export default function Home() {
   const connected = useStore((s) => s.connected);
 
   useEffect(() => {
-    const pid = getProjectId();
     connect();
-    const interval = setInterval(() => {
+    const pid = getProjectId();
+    const timer = setTimeout(() => {
       sendCommand("create_project", { title: "My Project", description: "New AI collaboration project" });
-    }, 2000);
-    setTimeout(() => clearInterval(interval), 15000);
+    }, 500);
+    return () => clearTimeout(timer);
   }, []);
 
   return (
