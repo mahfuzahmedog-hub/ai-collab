@@ -283,7 +283,7 @@ class OmniRouteProvider(LLMProvider):
     async def chat(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096) -> str:
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(
-                f"{self.config.base_url}/v1/chat/completions",
+                f"{self.config.base_url}/chat/completions",
                 headers={
                     "Authorization": f"Bearer {self.config.api_key}",
                     "Content-Type": "application/json",
@@ -301,7 +301,7 @@ class OmniRouteProvider(LLMProvider):
     async def chat_stream(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096):
         async with httpx.AsyncClient(timeout=300) as client:
             async with client.stream(
-                "POST", f"{self.config.base_url}/v1/chat/completions",
+                "POST", f"{self.config.base_url}/chat/completions",
                 headers={
                     "Authorization": f"Bearer {self.config.api_key}",
                     "Content-Type": "application/json",

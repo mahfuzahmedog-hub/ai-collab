@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_default_model: str = "gryphe/mythomax-l2-13b"
     omniroute_api_key: Optional[str] = None
-    omniroute_base_url: str = "http://localhost:20128"
+    omniroute_base_url: str = "http://localhost:20128/v1"
     omniroute_default_model: str = "auto"
     ollama_base_url: str = "http://localhost:11434"
 
