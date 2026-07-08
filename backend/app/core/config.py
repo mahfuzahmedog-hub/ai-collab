@@ -6,9 +6,14 @@ class Settings(BaseSettings):
     app_name: str = "AI Collaboration Platform"
     debug: bool = False
     secret_key: str = "change-me-in-production"
-    cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://ai-collab-13pv.vercel.app",
+        "https://*.vercel.app",
+    ]
 
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_collab"
+    database_url: str = "sqlite+aiosqlite:///./data/ai_collab.db"
     redis_url: str = "redis://localhost:6379/0"
 
     llm_default_provider: str = "openai"

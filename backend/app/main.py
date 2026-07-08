@@ -1,3 +1,4 @@
+import os
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -16,17 +17,24 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting AI Collaboration Platform...")
-    await redis_client.connect()
+    os.makedirs("data", exist_ok=True)
+    try:
+        await redis_client.connect()
+    except Exception as e:
+        logger.warning("Redis not available (continuing without it): %s", e)
     try:
         from app.db.session import init_db
         await init_db()
         logger.info("Database tables created")
     except Exception as e:
-        logger.warning("Database init skipped (may not be available yet): %s", e)
+        logger.warning("Database init skipped: %s", e)
     yield
     logger.info("Shutting down...")
     await agent_manager.stop_all()
-    await redis_client.disconnect()
+    try:
+        await redis_client.disconnect()
+    except Exception:
+        pass
 
 
 app = FastAPI(

@@ -4,27 +4,14 @@ services:
     runtime: python
     region: oregon
     plan: free
+    rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: ai-collab-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: ai-collab-redis
-          property: connectionString
       - key: DEBUG
         value: "false"
-
-databases:
-  - name: ai-collab-db
-    plan: free
-    region: oregon
-
-redis:
-  - name: ai-collab-redis
-    plan: free
-    maxmemoryPolicy: noeviction
+      - key: LLM_DEFAULT_PROVIDER
+        value: "omniroute"
+      - key: OMNIROUTE_BASE_URL
+        value: "http://localhost:20128/v1"
+      # Set OMNIROUTE_API_KEY in Render dashboard under Environment Variables
