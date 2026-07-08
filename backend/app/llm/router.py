@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 from app.llm.base import LLMProvider
-from app.llm.providers import OpenAIProvider, GroqProvider, GeminiProvider, AnthropicProvider, OllamaProvider
+from app.llm.providers import OpenAIProvider, GroqProvider, GeminiProvider, AnthropicProvider, OllamaProvider, OpenRouterProvider, OmniRouteProvider
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -18,6 +18,8 @@ class LLMRouter:
         self.register("gemini", GeminiProvider())
         self.register("anthropic", AnthropicProvider())
         self.register("ollama", OllamaProvider())
+        self.register("openrouter", OpenRouterProvider())
+        self.register("omniroute", OmniRouteProvider())
 
     def register(self, name: str, provider: LLMProvider):
         self._providers[name] = provider

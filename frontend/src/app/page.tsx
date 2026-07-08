@@ -4,9 +4,9 @@ import { useEffect } from "react";
 import { useStore } from "@/store";
 import { connect, getProjectId, sendCommand } from "@/lib/websocket";
 import { Sidebar } from "@/components/shared/Sidebar";
-import { Workspace } from "@/app/workspace/page";
-import { AgentsPage } from "@/app/agents/page";
-import { TasksPage } from "@/app/tasks/page";
+import { Workspace } from "@/components/workspace/index";
+import { AgentsPage } from "@/components/agents/Panel";
+import { TasksPage } from "@/components/tasks/Panel";
 import { Header } from "@/components/shared/Header";
 
 export default function Home() {

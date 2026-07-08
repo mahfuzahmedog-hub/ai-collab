@@ -266,3 +266,128 @@ class OllamaProvider(LLMProvider):
                                 yield content
                         except json.JSONDecodeError:
                             continue
+
+
+class OmniRouteProvider(LLMProvider):
+    def __init__(self):
+        self.config = ProviderConfig(
+            api_key=settings.omniroute_api_key,
+            base_url=settings.omniroute_base_url,
+            model=settings.omniroute_default_model,
+        )
+
+    @property
+    def name(self) -> str:
+        return "omniroute"
+
+    async def chat(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096) -> str:
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(
+                f"{self.config.base_url}/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.config.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.config.model or "auto",
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"]
+
+    async def chat_stream(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096):
+        async with httpx.AsyncClient(timeout=300) as client:
+            async with client.stream(
+                "POST", f"{self.config.base_url}/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.config.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.config.model or "auto",
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "stream": True,
+                },
+            ) as resp:
+                async for line in resp.aiter_lines():
+                    if line.startswith("data: "):
+                        data = line[6:]
+                        if data == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data)
+                            delta = chunk["choices"][0].get("delta", {}).get("content", "")
+                            if delta:
+                                yield delta
+                        except json.JSONDecodeError:
+                            continue
+
+
+class OpenRouterProvider(LLMProvider):
+    def __init__(self):
+        self.config = ProviderConfig(
+            api_key=settings.openrouter_api_key,
+            base_url=settings.openrouter_base_url,
+            model=settings.openrouter_default_model,
+        )
+
+    @property
+    def name(self) -> str:
+        return "openrouter"
+
+    async def chat(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096) -> str:
+        if not self.config.api_key:
+            return "[OpenRouter not configured - set OPENROUTER_API_KEY]"
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{self.config.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.config.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.config.model,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"]
+
+    async def chat_stream(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096):
+        if not self.config.api_key:
+            yield "[OpenRouter not configured]"
+            return
+        async with httpx.AsyncClient(timeout=120) as client:
+            async with client.stream(
+                "POST", f"{self.config.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.config.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.config.model,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "stream": True,
+                },
+            ) as resp:
+                async for line in resp.aiter_lines():
+                    if line.startswith("data: "):
+                        data = line[6:]
+                        if data == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data)
+                            delta = chunk["choices"][0].get("delta", {}).get("content", "")
+                            if delta:
+                                yield delta
+                        except json.JSONDecodeError:
+                            continue
