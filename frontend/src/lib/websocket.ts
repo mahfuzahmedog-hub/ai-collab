@@ -53,7 +53,12 @@ export function connect() {
     }
     if (!projectInitialized) {
       projectInitialized = true;
-      sendCommand("load_project", { project_id: pid });
+      const storedProject = getStorageItem("active_project_id");
+      if (storedProject) {
+        sendCommand("switch_project", { project_id: storedProject });
+      } else {
+        sendCommand("create_project", { title: "My AI Project" });
+      }
     }
   };
 
@@ -126,18 +131,9 @@ function handleMessage(data: any) {
       break;
 
     case "project_created":
-      store.setProject({
-        id: data.project_id,
-        title: "New Project",
-        description: "",
-        status: "new",
-        boss_agent_id: null,
-        agent_ids: [],
-        task_ids: [],
-        user_id: "user",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
+      store.setActiveProjectId(data.project_id);
+      setStorageItem("active_project_id", data.project_id);
+      sendCommand("load_project", { project_id: data.project_id });
       break;
 
     case "status":
@@ -152,6 +148,9 @@ function handleMessage(data: any) {
       if (data.project) {
         store.setProject(data.project as Project);
         store.setActiveProjectId(data.project.id);
+        setStorageItem("active_project_id", data.project.id);
+      } else {
+        sendCommand("create_project", { title: "My AI Project" });
       }
       break;
 
