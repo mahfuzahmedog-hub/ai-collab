@@ -170,8 +170,10 @@
                                                                           "context_length":  1048576,
                                                                           "max_output_tokens":  512000,
                                                                           "tool_calling":  true
-                                                                      }
-                                                  }
-                                   }
-                 }
+                                                                    }
+                                                    }
+                                    }
+                  }
+                  ,
+                  "plugin":  ["./.opencode/plugins/ponytail.mjs"]
 }
