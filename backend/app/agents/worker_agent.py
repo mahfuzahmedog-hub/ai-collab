@@ -158,3 +158,14 @@ As a {self.agent.role.value} with skills in {', '.join(self.agent.skills)}, plea
             channel="general",
         )
         self.status = AgentStatus.blocked
+
+    async def handle_direct_message(self, project_id: str, user_message: str):
+        prompt = f"""The user has sent you a direct message:
+{user_message}
+
+You are {self.name}, a {self.agent.role.value.replace('_', ' ')} with skills in {', '.join(self.agent.skills)}.
+Respond helpfully and professionally. You can offer to take on tasks, answer questions, or provide information."""
+        response = await self.think(prompt)
+        clean = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', response, flags=re.DOTALL).strip()
+        dm_channel = f"dm-{self.name.lower().replace(' ', '-')}"
+        await self.send_message(project_id, clean, channel=dm_channel)

@@ -51,8 +51,32 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                     }
                     await event_bus.publish("message", msg)
 
-                    if agent_manager.boss and agent_manager.boss.agent.project_id == project_id:
-                        await agent_manager.boss.handle_user_request(project_id, content)
+                    if channel.startswith("dm-"):
+                        agent_name = channel[3:]
+                        found = False
+                        if agent_manager.boss and agent_name.lower() == agent_manager.boss.name.lower():
+                            await agent_manager.boss.handle_user_request(project_id, content)
+                            found = True
+                        else:
+                            for wid, worker in (agent_manager.boss.team.items() if agent_manager.boss else {}).items():
+                                if agent_name.lower() == worker.name.lower().replace(" ", "-"):
+                                    await worker.handle_direct_message(project_id, content)
+                                    found = True
+                                    break
+                        if not found:
+                            await ws_manager.broadcast(project_id, {
+                                "type": "message",
+                                "id": f"msg-{uuid4().hex[:8]}",
+                                "project_id": project_id,
+                                "sender_id": "system",
+                                "sender_name": "System",
+                                "sender_role": "system",
+                                "content": f"Agent '{agent_name}' not found.",
+                                "msg_type": "system",
+                                "channel": channel,
+                            })
+                    elif agent_manager.boss and agent_manager.boss.agent.project_id == project_id:
+                        await agent_manager.boss.handle_user_request(project_id, content, channel)
 
                 elif msg_type == "command":
                     cmd = data.get("command", "")

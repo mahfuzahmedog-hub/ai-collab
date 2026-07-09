@@ -118,6 +118,98 @@ class BossAgent(BaseAgent):
         self.agent.project_id = project.id
         asyncio.create_task(save_project(project))
         await self.send_message(project.id, f"🚀 Project '{project.title}' initialized. I am your Boss Agent, {self.name}. Let me analyze this project and build a team.", msg_type="system")
+        await self._create_default_channels()
+        await self._create_default_team()
+        await self._start_team_discussion()
+
+    DEFAULT_CHANNELS = [
+        ("general", "General discussion"),
+        ("planning", "Planning and roadmap"),
+        ("architecture", "Architecture decisions"),
+        ("development", "Development work"),
+        ("backend", "Backend development"),
+        ("frontend", "Frontend development"),
+        ("research", "Research and analysis"),
+        ("design", "UI/UX design"),
+        ("documentation", "Documentation"),
+        ("testing", "Testing and QA"),
+    ]
+
+    async def _create_default_channels(self):
+        for ch, desc in self.DEFAULT_CHANNELS:
+            await event_bus.publish("channel_created", {
+                "project_id": self.project.id,
+                "channel": ch,
+                "name": f"#{ch}",
+                "description": desc,
+            })
+            await asyncio.sleep(0.1)
+
+    DEFAULT_TEAM = [
+        {"role": AgentRole.researcher, "name": "Researcher", "skills": ["research", "analysis", "data-gathering"], "personality": "curious and thorough researcher", "channels": ["research", "general", "planning"]},
+        {"role": AgentRole.architect, "name": "Architect", "skills": ["system-design", "architecture", "planning"], "personality": "experienced system architect focused on scalable design", "channels": ["architecture", "planning", "general", "development"]},
+        {"role": AgentRole.backend, "name": "Backend-Engineer", "skills": ["python", "api", "database", "server"], "personality": "skilled backend engineer focused on robust APIs", "channels": ["backend", "development", "general", "architecture"]},
+        {"role": AgentRole.frontend, "name": "Frontend-Engineer", "skills": ["react", "ui", "frontend", "web"], "personality": "creative frontend engineer who builds great UIs", "channels": ["frontend", "development", "general", "design"]},
+        {"role": AgentRole.qa, "name": "QA-Engineer", "skills": ["testing", "qa", "automation", "quality"], "personality": "detail-oriented QA engineer ensuring quality", "channels": ["testing", "general", "development"]},
+        {"role": AgentRole.documentation, "name": "Documentation-Writer", "skills": ["writing", "documentation", "technical-writing"], "personality": "clear and concise technical writer", "channels": ["documentation", "general", "planning"]},
+    ]
+
+    async def _create_default_team(self):
+        await self.send_message(self.project.id, "Building your team...", msg_type="system", channel="general")
+        for member in self.DEFAULT_TEAM:
+            role = member["role"]
+            name = member["name"]
+            skills = member["skills"]
+            personality = member["personality"]
+            channels = member["channels"]
+            agent_model = Agent(
+                name=name,
+                role=role,
+                project_id=self.project.id,
+                skills=skills,
+                personality=personality,
+                provider=settings.llm_default_provider,
+                model=settings.llm_default_model,
+            )
+            worker = WorkerAgent(agent_model)
+            self.team[agent_model.id] = worker
+            self.project.agent_ids.append(agent_model.id)
+            asyncio.create_task(save_agent(agent_model))
+            for ch in channels:
+                await event_bus.publish("channel_created", {
+                    "project_id": self.project.id,
+                    "channel": ch,
+                    "name": f"#{ch}",
+                })
+            await worker.send_message(
+                self.project.id,
+                f"Hello team! I'm {name}, your {role.value.replace('_', ' ')}. I'll be working on {', '.join(skills)}. Ready to contribute!",
+                channel="general",
+            )
+            await asyncio.sleep(0.3)
+
+    async def _start_team_discussion(self):
+        await self.send_message(
+            self.project.id,
+            f"Team assembled with {len(self.team)} members. Let's discuss our approach for '{self.project.title}'. "
+            f"Researcher, what do we know about this domain? Architect, any initial thoughts on the system design?",
+            channel="planning",
+        )
+        for agent_id, worker in self.team.items():
+            role_name = worker.name
+            prompt = f"The team is discussing the project '{self.project.title}'. Provide your initial thoughts and what you'll need to contribute."
+            asyncio.create_task(self._have_worker_respond(agent_id, prompt, channel=worker.agent.skills[0] if worker.agent.skills else "general"))
+
+    async def _have_worker_respond(self, agent_id: str, prompt: str, channel: str = "general"):
+        worker = self.team.get(agent_id)
+        if not worker:
+            return
+        try:
+            response = await worker.think(f"You are part of a team discussion. {prompt}")
+            clean = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', response, flags=re.DOTALL).strip()
+            await worker.send_message(self.project.id, clean, channel=channel)
+        except Exception as e:
+            logger.warning("Worker %s respond error: %s", worker.name, e)
 
     def _parse_actions(self, text: str) -> list[dict]:
         # Use base class implementation
@@ -167,19 +259,22 @@ class BossAgent(BaseAgent):
                 assigned_role=assigned_role,
             )
 
-    async def handle_user_request(self, project_id: str, user_message: str):
-        prompt = f"""The user has sent this message:
+    async def handle_user_request(self, project_id: str, user_message: str, channel: str = "general"):
+        team_info = ', '.join(f'{a.name} ({a.role.value})' for a in self.team.values()) if self.team else 'No team yet'
+        channels_info = ', '.join(ch for ch, _ in self.DEFAULT_CHANNELS) if self.team else 'No channels yet'
+        prompt = f"""The user sent a message in channel #{channel}:
 {user_message}
 
 Current project: {self.project.title if self.project else 'No project'}
-Team members: {', '.join(f'{a.name} ({a.role.value})' for a in self.team.values()) if self.team else 'No team yet'}
+Team members: {team_info}
+Available channels: {channels_info}
 
-Respond professionally as the Boss Agent. If this is a new project request, analyze it and decide what team you need. If there's an existing team, delegate work appropriately."""
+Respond professionally as the Boss Agent. If the user is asking for work to be done, delegate to the appropriate team member via [ACTION] blocks. If they're asking a question in a specific channel, answer it."""
 
         response = await self.think(prompt)
         actions = self._parse_actions(response)
         clean = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', response, flags=re.DOTALL).strip()
-        await self.send_message(project_id, clean or response)
+        await self.send_message(project_id, clean or response, channel=channel)
         for action in actions:
             await self._execute_action(action)
 

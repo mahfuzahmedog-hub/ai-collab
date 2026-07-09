@@ -15,7 +15,7 @@ export function Timeline() {
   const endRef = useRef<HTMLDivElement>(null);
 
   // Filter messages by active channel
-  const channelMessages = messages.filter((m) => m.channel === activeChannel || m.channel === "general");
+  const channelMessages = messages.filter((m) => m.channel === activeChannel);
 
   // Auto-scroll
   useEffect(() => {

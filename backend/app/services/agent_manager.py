@@ -23,6 +23,8 @@ class AgentManager:
             project_id=project_id,
             skills=["management", "planning", "coordination", "leadership"],
             personality="experienced engineering manager, decisive and clear communicator",
+            provider=settings.llm_default_provider,
+            model=settings.llm_default_model,
         )
         self.boss = BossAgent(agent)
         await self.boss.start()
@@ -79,6 +81,8 @@ class AgentManager:
             role=role,
             project_id=project_id,
             skills=skills or [role.value],
+            provider=settings.llm_default_provider,
+            model=settings.llm_default_model,
         )
         worker = WorkerAgent(agent)
         self.workers[agent.id] = worker

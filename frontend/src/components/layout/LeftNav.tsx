@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { useStore } from "@/store";
-import { Hash, MessageSquare, Users, CheckSquare, Plus } from "lucide-react";
+import { Hash, MessageSquare, Users, Plus } from "lucide-react";
 
 export function LeftNav() {
   const channels = useStore((s) => s.channels);
+  const agents = useStore((s) => s.agents);
   const activeChannel = useStore((s) => s.activeChannel);
   const setActiveChannel = useStore((s) => s.setActiveChannel);
   const activeProjectId = useStore((s) => s.activeProjectId);
@@ -28,6 +29,8 @@ export function LeftNav() {
     setNewChannelName("");
   };
 
+  const agentList = agents.filter((a) => a.role !== "boss");
+
   return (
     <aside className="w-56 flex-shrink-0 bg-dark-900 border-r border-dark-700 flex flex-col h-full">
       {/* Project header */}
@@ -42,7 +45,7 @@ export function LeftNav() {
       </div>
 
       {/* Channels */}
-      <div className="flex-1 overflow-y-auto p-2">
+      <div className="overflow-y-auto p-2 flex-1">
         <div className="flex items-center justify-between mb-2 px-2">
           <span className="text-xs font-semibold text-dark-400 uppercase tracking-wider">
             Channels
@@ -70,7 +73,7 @@ export function LeftNav() {
           </div>
         )}
 
-        <ul className="space-y-1">
+        <ul className="space-y-1 mb-4">
           {channels.map((ch) => (
             <li key={ch.id}>
               <button
@@ -90,6 +93,50 @@ export function LeftNav() {
             </li>
           ))}
         </ul>
+
+        {/* Direct Messages */}
+        {agentList.length > 0 && (
+          <>
+            <div className="flex items-center justify-between mb-2 px-2">
+              <span className="text-xs font-semibold text-dark-400 uppercase tracking-wider">
+                Direct Messages
+              </span>
+            </div>
+            <ul className="space-y-1">
+              <li>
+                <button
+                  onClick={() => setActiveChannel("dm-boss")}
+                  className={`w-full px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${
+                    activeChannel === "dm-boss"
+                      ? "bg-primary-600/20 text-white"
+                      : "text-dark-300 hover:bg-dark-700 hover:text-white"
+                  }`}
+                >
+                  <MessageSquare className="w-4 h-4 flex-shrink-0 text-primary-400" />
+                  <span className="truncate">Boss</span>
+                </button>
+              </li>
+              {agentList.map((agent) => {
+                const dmChannel = `dm-${agent.name.toLowerCase().replace(/\s+/g, "-")}`;
+                return (
+                  <li key={agent.id}>
+                    <button
+                      onClick={() => setActiveChannel(dmChannel)}
+                      className={`w-full px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${
+                        activeChannel === dmChannel
+                          ? "bg-primary-600/20 text-white"
+                          : "text-dark-300 hover:bg-dark-700 hover:text-white"
+                      }`}
+                    >
+                      <MessageSquare className="w-4 h-4 flex-shrink-0 text-dark-400" />
+                      <span className="truncate">{agent.name}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
       </div>
 
       {/* Connection status */}
