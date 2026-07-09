@@ -107,6 +107,9 @@ class AgentManager:
         if self.boss:
             if not project_id or self.boss.agent.project_id == project_id:
                 agents.append(self.boss.agent.model_dump())
+                for worker in self.boss.team.values():
+                    if not project_id or worker.agent.project_id == project_id:
+                        agents.append(worker.agent.model_dump())
         for worker in self.workers.values():
             if not project_id or worker.agent.project_id == project_id:
                 agents.append(worker.agent.model_dump())

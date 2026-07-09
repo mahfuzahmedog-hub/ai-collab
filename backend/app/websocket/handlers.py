@@ -54,15 +54,16 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                     if channel.startswith("dm-"):
                         agent_name = channel[3:]
                         found = False
-                        if agent_manager.boss and agent_name.lower() == agent_manager.boss.name.lower():
-                            await agent_manager.boss.handle_user_request(project_id, content)
-                            found = True
-                        else:
-                            for wid, worker in (agent_manager.boss.team.items() if agent_manager.boss else {}).items():
-                                if agent_name.lower() == worker.name.lower().replace(" ", "-"):
-                                    await worker.handle_direct_message(project_id, content)
-                                    found = True
-                                    break
+                        if agent_manager.boss:
+                            if agent_name.lower() == agent_manager.boss.name.lower():
+                                await agent_manager.boss.handle_user_request(project_id, content, channel)
+                                found = True
+                            else:
+                                for wid, worker in agent_manager.boss.team.items():
+                                    if agent_name.lower() == worker.name.lower().replace(" ", "-"):
+                                        await worker.handle_direct_message(project_id, content)
+                                        found = True
+                                        break
                         if not found:
                             await ws_manager.broadcast(project_id, {
                                 "type": "message",

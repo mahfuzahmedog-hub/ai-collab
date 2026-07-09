@@ -175,12 +175,6 @@ class BossAgent(BaseAgent):
             self.team[agent_model.id] = worker
             self.project.agent_ids.append(agent_model.id)
             asyncio.create_task(save_agent(agent_model))
-            for ch in channels:
-                await event_bus.publish("channel_created", {
-                    "project_id": self.project.id,
-                    "channel": ch,
-                    "name": f"#{ch}",
-                })
             await worker.send_message(
                 self.project.id,
                 f"Hello team! I'm {name}, your {role.value.replace('_', ' ')}. I'll be working on {', '.join(skills)}. Ready to contribute!",
