@@ -300,5 +300,3 @@ Respond professionally as the Boss Agent. If this is a new project request, anal
     async def _monitor_loop(self):
         while True:
             await asyncio.sleep(30)
-            if self.project:
-                await self.review_progress()

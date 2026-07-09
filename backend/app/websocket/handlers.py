@@ -14,7 +14,8 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
     await ws_manager.connect(websocket, project_id, user_id)
 
     async def on_event(data: dict):
-        await ws_manager.broadcast(project_id, data)
+        if data.get("type") != "message":
+            await ws_manager.broadcast(project_id, data)
 
     event_bus.subscribe("*", on_event)
 
@@ -62,6 +63,7 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected: project=%s", project_id)
     finally:
+        event_bus.unsubscribe("*", on_event)
         await ws_manager.disconnect(websocket, project_id)
 
 
