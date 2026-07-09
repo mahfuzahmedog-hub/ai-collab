@@ -38,18 +38,10 @@ export function connect() {
   if (ws?.readyState === WebSocket.OPEN) return;
 
   const pid = getProjectId();
-  const wsEnvUrl = process.env.NEXT_PUBLIC_WS_URL || "";
-  let url: string;
-
-  if (wsEnvUrl) {
-    const base = wsEnvUrl.replace(/^https?:\/\//, "").replace(/^ws[s]?:\/\//, "");
-    url = `wss://${base}/ws/${pid}/user`;
-  } else if (window.location.hostname !== "localhost") {
-    url = `wss://ai-collab-backend-j6xe.onrender.com/ws/${pid}/user`;
-  } else {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    url = `${protocol}//localhost:8000/ws/${pid}/user`;
-  }
+  const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  const url = isLocal
+    ? `ws://localhost:8000/ws/${pid}/user`
+    : `wss://ai-collab-backend-j6xe.onrender.com/ws/${pid}/user`;
 
   ws = new WebSocket(url);
 
