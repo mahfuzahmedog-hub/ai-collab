@@ -2,16 +2,8 @@ services:
   - type: web
     name: ai-collab-backend
     runtime: python
-    region: oregon
-    plan: free
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt
+    buildCommand: ""
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: DEBUG
-        value: "false"
-      - key: LLM_DEFAULT_PROVIDER
-        value: "omniroute"
-      - key: OMNIROUTE_BASE_URL
-        value: "http://localhost:20128/v1"
-      # Set OMNIROUTE_API_KEY in Render dashboard under Environment Variables
+      - key: PYTHON_VERSION
+        value: 3.12.0

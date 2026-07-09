@@ -10,16 +10,22 @@ logger = logging.getLogger(__name__)
 class LLMRouter:
     def __init__(self):
         self._providers: dict[str, LLMProvider] = {}
-        self._register_defaults()
+        self._register_configured()
 
-    def _register_defaults(self):
-        self.register("openai", OpenAIProvider())
-        self.register("groq", GroqProvider())
-        self.register("gemini", GeminiProvider())
-        self.register("anthropic", AnthropicProvider())
+    def _register_configured(self):
+        if settings.openai_api_key:
+            self.register("openai", OpenAIProvider())
+        if settings.groq_api_key:
+            self.register("groq", GroqProvider())
+        if settings.google_api_key:
+            self.register("gemini", GeminiProvider())
+        if settings.anthropic_api_key:
+            self.register("anthropic", AnthropicProvider())
+        if settings.openrouter_api_key:
+            self.register("openrouter", OpenRouterProvider())
+        if settings.omniroute_api_key:
+            self.register("omniroute", OmniRouteProvider())
         self.register("ollama", OllamaProvider())
-        self.register("openrouter", OpenRouterProvider())
-        self.register("omniroute", OmniRouteProvider())
 
     def register(self, name: str, provider: LLMProvider):
         self._providers[name] = provider
@@ -29,8 +35,8 @@ class LLMRouter:
         name = name or settings.llm_default_provider
         provider = self._providers.get(name)
         if not provider:
-            logger.warning("Provider '%s' not found, falling back to openai", name)
-            provider = self._providers.get("openai", list(self._providers.values())[0])
+            logger.warning("Provider '%s' not found, falling back to first available", name)
+            provider = next(iter(self._providers.values()), None)
         return provider
 
     async def chat(self, messages: list[dict], provider: Optional[str] = None, temperature: float = 0.7, max_tokens: int = 4096) -> str:

@@ -46,11 +46,15 @@ class BaseAgent:
             {"role": "user", "content": prompt},
         ]
         try:
-            response = await llm_router.chat(
+            provider = llm_router.get_provider(self.agent.provider)
+            if not provider:
+                raise RuntimeError("No LLM provider configured")
+            response = await provider.chat(
                 messages,
-                provider=self.agent.provider,
                 temperature=temperature or self.agent.temperature,
             )
+            if response.startswith("["):
+                raise RuntimeError(f"Provider error: {response}")
         except Exception as e:
             logger.error("Agent %s think error: %s", self.name, e)
             response = f"I received your request but the LLM service is currently unavailable. Please ensure the configured provider ({self.agent.provider}) is running and accessible."
