@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+const path = require("path");
+
 const nextConfig = {
   reactStrictMode: true,
   async rewrites() {
@@ -9,6 +11,10 @@ const nextConfig = {
         destination: `${apiUrl}/api/:path*`,
       },
     ];
+  },
+  webpack(config) {
+    config.resolve.alias["@"] = path.join(__dirname, "src");
+    return config;
   },
 };
 
