@@ -280,6 +280,10 @@ class OmniRouteProvider(LLMProvider):
     def name(self) -> str:
         return "omniroute"
 
+    async def _extract_content(self, choice: dict) -> str:
+        msg = choice.get("message", choice)
+        return msg.get("content") or msg.get("reasoning_content", "")
+
     async def chat(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096) -> str:
         async with httpx.AsyncClient(timeout=120) as client:
             body = {
@@ -289,8 +293,6 @@ class OmniRouteProvider(LLMProvider):
                 "max_tokens": max_tokens,
                 "stream": False,
             }
-            if self.config.model and self.config.model.startswith("mcode/"):
-                body["thinking"] = {"type": "disabled"}
             resp = await client.post(
                 f"{self.config.base_url}/chat/completions",
                 headers={
@@ -300,8 +302,7 @@ class OmniRouteProvider(LLMProvider):
                 json=body,
             )
             resp.raise_for_status()
-            choice = resp.json()["choices"][0]["message"]
-            return choice.get("content") or choice.get("reasoning_content", "")
+            return self._extract_content(resp.json()["choices"][0])
 
     async def chat_stream(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096):
         async with httpx.AsyncClient(timeout=300) as client:
@@ -312,8 +313,6 @@ class OmniRouteProvider(LLMProvider):
                 "max_tokens": max_tokens,
                 "stream": True,
             }
-            if self.config.model and self.config.model.startswith("mcode/"):
-                body["thinking"] = {"type": "disabled"}
             async with client.stream(
                 "POST", f"{self.config.base_url}/chat/completions",
                 headers={
