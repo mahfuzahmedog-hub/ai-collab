@@ -2,34 +2,39 @@
 
 import { useEffect } from "react";
 import { useStore } from "@/store";
-import { connect } from "@/lib/websocket";
+import { connect, sendCommand } from "@/lib/websocket";
 import { TopBar } from "@/components/layout/TopBar";
 import { LeftNav } from "@/components/layout/LeftNav";
 import { AgentSidebar } from "@/components/layout/AgentSidebar";
-import { Dashboard } from "@/components/layout/Dashboard";
 import { Timeline } from "@/components/timeline/Timeline";
-import { AgentsPage } from "@/components/agents/Panel";
-import { TasksPage } from "@/components/tasks/Panel";
 
 export default function Home() {
-  const activeTab = useStore((s) => s.activeTab);
+  const activeProjectId = useStore((s) => s.activeProjectId);
 
   useEffect(() => {
     connect();
+    // Check for project in URL or localStorage
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlProject = urlParams.get("project");
+    if (urlProject) {
+      sendCommand("switch_project", { project_id: urlProject });
+    } else {
+      const stored = localStorage.getItem("active_project_id");
+      if (stored) {
+        sendCommand("switch_project", { project_id: stored });
+      }
+    }
   }, []);
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <div className="flex flex-col h-screen overflow-hidden bg-dark-950">
       <TopBar />
       <div className="flex flex-1 overflow-hidden">
         <LeftNav />
-        <AgentSidebar />
-        <main className="flex-1 overflow-hidden min-w-0">
-          {activeTab === "workspace" && <Timeline />}
-          {activeTab === "agents" && <AgentsPage />}
-          {activeTab === "tasks" && <TasksPage />}
+        <main className="flex-1 overflow-hidden min-w-0 flex flex-col">
+          <Timeline />
         </main>
-        <Dashboard />
+        <AgentSidebar />
       </div>
     </div>
   );

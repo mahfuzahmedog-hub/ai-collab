@@ -1,107 +1,117 @@
 "use client";
 
-import type { Message } from "@/types";
-import { useState } from "react";
-import {
-  User,
-  Bot,
-  Crown,
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
-  Terminal,
-  Code2,
-  FileText,
-  MessageSquare,
-  ChevronDown,
-  ChevronRight,
-  Clock,
-} from "lucide-react";
-import { clsx } from "clsx";
+import { formatDistanceToNow } from "date-fns";
+import { Bot, FileText, Terminal, AlertCircle, CheckCircle } from "lucide-react";
 
-const roleConfig: Record<string, { color: string; icon: any }> = {
-  boss: { color: "text-accent-400 border-accent-500/30 bg-accent-500/10", icon: Crown },
-  user: { color: "text-blue-400 border-blue-500/30 bg-blue-500/10", icon: User },
-  backend_engineer: { color: "text-cyan-400 border-cyan-500/30 bg-cyan-500/10", icon: Terminal },
-  frontend_engineer: { color: "text-pink-400 border-pink-500/30 bg-pink-500/10", icon: Code2 },
-  planner: { color: "text-purple-400 border-purple-500/30 bg-purple-500/10", icon: FileText },
-  researcher: { color: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10", icon: Bot },
-  reviewer: { color: "text-orange-400 border-orange-500/30 bg-orange-500/10", icon: CheckCircle2 },
-  default: { color: "text-dark-400 border-dark-600/30 bg-dark-700/30", icon: MessageSquare },
+interface EventCardProps {
+  msg: {
+    id: string;
+    project_id: string;
+    sender_id: string;
+    sender_name: string;
+    sender_role: string;
+    content: string;
+    msg_type: string;
+    channel: string;
+    reply_to: string | null;
+    mentions: string[];
+    attachments: any[];
+    metadata: Record<string, any>;
+    timestamp: string;
+  };
+  isLast: boolean;
+  agents: { id: string; name: string; role: string; status: string }[];
+  isStreaming?: boolean;
+}
+
+const ROLE_COLORS: Record<string, string> = {
+  boss: "bg-primary-600",
+  backend_engineer: "bg-blue-600",
+  frontend_engineer: "bg-pink-600",
+  researcher: "bg-purple-600",
+  architect: "bg-amber-600",
+  reviewer: "bg-green-600",
+  qa_engineer: "bg-emerald-600",
+  devops: "bg-orange-600",
+  default: "bg-dark-600",
 };
 
-const msgTypeIcon: Record<string, any> = {
-  system: Terminal,
-  task_update: Loader2,
-  review: CheckCircle2,
+const ROLE_ICONS: Record<string, React.ReactNode> = {
+  boss: <Bot className="w-4 h-4" />,
+  backend_engineer: <Terminal className="w-4 h-4" />,
+  frontend_engineer: <FileText className="w-4 h-4" />,
+  reviewer: <CheckCircle className="w-4 h-4" />,
+  qa_engineer: <AlertCircle className="w-4 h-4" />,
+  default: <Bot className="w-4 h-4" />,
 };
 
-export function EventCard({ msg, isLast }: { msg: Message; isLast: boolean }) {
-  const [expanded, setExpanded] = useState(false);
+export function EventCard({ msg, isLast, agents, isStreaming }: EventCardProps) {
+  const agent = agents.find((a) => a.id === msg.sender_id);
   const isUser = msg.sender_role === "user";
   const isSystem = msg.msg_type === "system";
-  const config = roleConfig[msg.sender_role] || roleConfig.default;
-  const Icon = msgTypeIcon[msg.msg_type] || config.icon;
+  const isFile = msg.msg_type === "file";
 
-  const isProgress = msg.content.includes("Progress Update");
+  const roleColor = agent ? ROLE_COLORS[agent.role] || ROLE_COLORS.default : ROLE_COLORS.default;
+  const roleIcon = agent ? ROLE_ICONS[agent.role] || ROLE_ICONS.default : ROLE_ICONS.default;
+
+  let timeStr = "";
+  try {
+    timeStr = formatDistanceToNow(new Date(msg.timestamp), { addSuffix: true });
+  } catch {
+    timeStr = "just now";
+  }
+
+  if (isSystem) {
+    return (
+      <div className="flex items-start gap-3 opacity-70" style={{ borderLeft: isLast ? "2px solid transparent" : "2px solid #374151" }}>
+        <div className="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center flex-shrink-0">
+          <AlertCircle className="w-4 h-4 text-dark-400" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-xs text-dark-400 mb-1">{msg.content}</div>
+          <div className="text-xs text-dark-500">{timeStr}</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isFile) {
+    return (
+      <div className="flex items-start gap-3" style={{ borderLeft: isLast ? "2px solid transparent" : "2px solid #374151" }}>
+        <div className="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center flex-shrink-0">
+          <FileText className="w-4 h-4 text-blue-400" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 text-xs text-dark-400 mb-1">
+            <span className="px-1.5 py-0.5 bg-blue-600/20 text-blue-400 rounded">FILE</span>
+            <span>{timeStr}</span>
+          </div>
+          <div className="text-sm text-dark-200 font-mono bg-dark-800 p-2 rounded text-white">{msg.content}</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className={clsx(
-      "relative flex gap-3 px-4 py-2.5 group transition-colors animate-fade-in",
-      isSystem ? "opacity-70" : "hover:bg-dark-800/30"
-    )}>
-      {!isLast && (
-        <div className="timeline-line absolute left-[23px] top-9 bottom-0 w-[1.5px]" />
-      )}
-
-      <div className={clsx(
-        "w-8 h-8 rounded-full flex items-center justify-center shrink-0 border",
-        config.color,
-        isUser ? "bg-blue-600/20 border-blue-500/40" : ""
-      )}>
-        <Icon size={14} />
-      </div>
-
-      <div className="flex-1 min-w-0 space-y-0.5">
-        <div className="flex items-center gap-2">
-          <span className={clsx(
-            "text-xs font-semibold",
-            isUser ? "text-blue-300" : isSystem ? "text-dark-400" : config.color.split(" ")[0]
-          )}>
-            {isUser ? "You" : msg.sender_name}
-          </span>
-          <span className="text-[10px] text-dark-600 capitalize">
-            {msg.sender_role.replace(/_/g, " ")}
-          </span>
-          <span className="text-[10px] text-dark-600 ml-auto flex items-center gap-1">
-            <Clock size={10} />
-            {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-          </span>
+    <div className="flex items-start gap-3" style={{ borderLeft: isLast ? "2px solid transparent" : "2px solid #374151" }}>
+      <div className="relative flex-shrink-0">
+        <div className={`w-8 h-8 rounded-full ${roleColor} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
+          {roleIcon}
         </div>
-
-        {isProgress ? (
-          <div>
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="flex items-center gap-1 text-xs text-accent-400 hover:text-accent-300 transition-colors"
-            >
-              {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-              Progress Update
-            </button>
-            {expanded && (
-              <pre className="mt-1 text-xs text-dark-300 whitespace-pre-wrap font-sans">
-                {msg.content.replace("📊 Progress Update:\n", "")}
-              </pre>
-            )}
-          </div>
-        ) : (
-          <p className={clsx(
-            "text-sm whitespace-pre-wrap break-words",
-            isSystem ? "text-dark-500 italic" : "text-dark-100"
-          )}>
-            {msg.content}
-          </p>
+        {isStreaming && (
+          <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-primary-500 rounded-full animate-pulse border-2 border-dark-950" />
         )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="font-medium text-white text-sm">{msg.sender_name}</span>
+          <span className="text-xs text-dark-400 bg-dark-800 px-1.5 py-0.5 rounded">{msg.sender_role}</span>
+          <span className="text-xs text-dark-500">{timeStr}</span>
+          {msg.channel !== "general" && (
+            <span className="text-xs text-primary-400 bg-primary-600/20 px-1.5 py-0.5 rounded">#{msg.channel}</span>
+          )}
+        </div>
+        <div className="text-sm text-dark-100 whitespace-pre-wrap">{msg.content}</div>
       </div>
     </div>
   );

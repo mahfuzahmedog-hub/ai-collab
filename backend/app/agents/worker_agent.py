@@ -1,10 +1,14 @@
 import asyncio
+import json
 import logging
+import re
 from typing import Optional
 from app.agents.base_agent import BaseAgent
 from app.models.agent import Agent, AgentStatus
 from app.models.task import Task, TaskStatus
 from app.core.event_bus import event_bus
+from app.workspace.manager import write_file, read_file, list_files
+from app.db.repository import load_project_messages
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +24,37 @@ class WorkerAgent(BaseAgent):
         self.agent.current_task_id = task.id
         self.status = AgentStatus.working
 
+    def _parse_actions(self, text: str) -> list[dict]:
+        matches = re.findall(r'\[ACTION\](.*?)\[/ACTION\]', text, re.DOTALL)
+        actions = []
+        for m in matches:
+            try:
+                actions.append(json.loads(m.strip()))
+            except json.JSONDecodeError:
+                logger.warning("WorkerAgent %s: failed to parse action: %s", self.name, m[:120])
+        return actions
+
+    async def _execute_action(self, action: dict) -> str:
+        t = action.get("type")
+        if t == "write_file":
+            path = action.get("path", "")
+            content = action.get("content", "")
+            if path:
+                result = await write_file(self.agent.project_id, path, content)
+                return f"Created {path} ({result['size']} bytes)"
+        elif t == "read_file":
+            path = action.get("path", "")
+            if path:
+                try:
+                    content = await read_file(self.agent.project_id, path)
+                    return f"Read {path}: {content[:200]}..."
+                except FileNotFoundError:
+                    return f"File not found: {path}"
+        elif t == "list_files":
+            files = await list_files(self.agent.project_id)
+            return f"Files: {', '.join(f['path'] for f in files)}"
+        return ""
+
     async def work_on_task(self) -> str:
         if not self.current_task:
             return "No task assigned."
@@ -27,32 +62,58 @@ class WorkerAgent(BaseAgent):
         self.current_task.status = TaskStatus.working
         await self.send_message(
             self.agent.project_id,
-            f"🔨 Starting work on '{self.current_task.title}'...",
+            f"Starting work on '{self.current_task.title}'...",
             msg_type="task_update",
+            channel="general",
         )
+
+        # Inject recent group chat context
+        recent = await load_project_messages(self.agent.project_id, limit=15)
+        context = ""
+        if recent:
+            context = "\nRecent team chat:\n" + "\n".join(
+                f"[{m.sender_name}]: {m.content[:200]}" for m in recent[-10:]
+            )
 
         prompt = f"""You are working on the following task:
 
 Title: {self.current_task.title}
 Description: {self.current_task.description}
 Priority: {self.current_task.priority.value}
+{context}
 
-Please work on this task now. Think through the approach, implement the solution, and describe what you're doing. Be thorough and detailed."""
+Please work on this task now. Think through the approach, implement the solution, and describe what you're doing. When you write files, use [ACTION] blocks. Be thorough and detailed."""
 
         result = await self.think(prompt)
+
+        # Parse and execute any file actions
+        actions = self._parse_actions(result)
+        for action in actions:
+            feedback = await self._execute_action(action)
+            if feedback:
+                await self.send_message(
+                    self.agent.project_id,
+                    feedback,
+                    msg_type="file",
+                    channel="general",
+                )
+
+        # Strip action blocks from displayed response
+        clean_result = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', result, flags=re.DOTALL).strip()
 
         self.current_task.status = TaskStatus.completed
         self.completed_tasks.append(self.current_task)
         self.agent.memory["completed_tasks"].append({
             "task_id": self.current_task.id,
             "title": self.current_task.title,
-            "result": result[:500],
+            "result": clean_result[:500],
         })
 
         await self.send_message(
             self.agent.project_id,
-            f"✅ Completed task '{self.current_task.title}'.\n\nSummary: {result[:300]}...",
+            f"Completed task '{self.current_task.title}'.\n\n{clean_result[:300]}",
             msg_type="task_complete",
+            channel="general",
             metadata={"task_id": self.current_task.id},
         )
 
@@ -61,7 +122,7 @@ Please work on this task now. Think through the approach, implement the solution
         self.agent.current_task_id = None
         self.status = AgentStatus.idle
 
-        return result
+        return clean_result
 
     async def review_work(self, work_description: str) -> dict:
         prompt = f"""Please review the following work:
@@ -92,7 +153,8 @@ As a {self.agent.role.value} with skills in {', '.join(self.agent.skills)}, plea
     async def report_blocker(self, issue: str):
         await self.send_message(
             self.agent.project_id,
-            f"🚧 Blocked: {issue}\nI need help resolving this.",
+            f"Blocked: {issue}\nI need help resolving this.",
             msg_type="task_update",
+            channel="general",
         )
         self.status = AgentStatus.blocked

@@ -5,7 +5,7 @@ from app.models.agent import Agent, AgentRole, AgentStatus
 from app.agents.boss_agent import BossAgent
 from app.agents.worker_agent import WorkerAgent
 from app.core.event_bus import event_bus
-from app.db.repository import save_agent, load_project_agents, load_project_messages
+from app.db.repository import save_agent, load_project_agents, load_project_messages, load_project
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +14,7 @@ class AgentManager:
     def __init__(self):
         self.boss: Optional[BossAgent] = None
         self.workers: dict[str, WorkerAgent] = {}
+        self.current_project_id: Optional[str] = None
 
     async def create_boss(self, project_id: str, name: str = "Boss") -> BossAgent:
         agent = Agent(
@@ -27,9 +28,27 @@ class AgentManager:
         await self.boss.start()
         await event_bus.publish("agent_created", agent.model_dump())
         asyncio.create_task(save_agent(agent))
-        # ponytail: best-effort restore, don't block startup
         asyncio.create_task(self._restore_project(project_id))
+        self.current_project_id = project_id
         return self.boss
+
+    async def switch_project(self, project_id: str):
+        # Save current project state
+        if self.boss and self.current_project_id:
+            # Current project agents will be saved via their individual save calls
+            pass
+        
+        # Clear current workers
+        for worker in self.workers.values():
+            await worker.stop()
+        self.workers.clear()
+        
+        # Load new project
+        self.current_project_id = project_id
+        await self._restore_project(project_id)
+        if self.boss:
+            self.boss.agent.project_id = project_id
+            self.boss.project.id = project_id if self.boss.project else None
 
     async def _restore_project(self, project_id: str):
         try:

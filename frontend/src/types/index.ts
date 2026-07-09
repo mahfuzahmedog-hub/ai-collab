@@ -63,11 +63,28 @@ export interface Message {
   sender_role: string;
   content: string;
   msg_type: "chat" | "task_update" | "review" | "system" | "file";
+  channel: string;
   reply_to: string | null;
   mentions: string[];
   attachments: any[];
   metadata: Record<string, any>;
   timestamp: string;
+}
+
+export interface Channel {
+  id: string;
+  name: string;
+  project_id: string;
+  unread: boolean;
+}
+
+export interface FileNode {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+  children?: FileNode[];
+  size?: number;
+  modified?: number;
 }
 
 export interface Project {

@@ -1,75 +1,115 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/store";
-import { sendChat } from "@/lib/websocket";
-import { EventCard } from "@/components/timeline/EventCard";
-import { Send, Bot, Sparkles } from "lucide-react";
+import { sendChat, sendCommand } from "@/lib/websocket";
+import { EventCard } from "./EventCard";
+import { Send, Loader2 } from "lucide-react";
 
 export function Timeline() {
   const messages = useStore((s) => s.messages);
   const agents = useStore((s) => s.agents);
+  const activeChannel = useStore((s) => s.activeChannel);
+  const streamingChunk = useStore((s) => s.streamingChunk);
   const [input, setInput] = useState("");
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
 
+  // Filter messages by active channel
+  const channelMessages = messages.filter((m) => m.channel === activeChannel || m.channel === "general");
+
+  // Auto-scroll
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [channelMessages, streamingChunk]);
 
   const handleSend = () => {
     if (!input.trim()) return;
-    sendChat(input.trim());
+    sendChat(input, activeChannel);
     setInput("");
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
   };
 
   const hasBoss = agents.some((a) => a.role === "boss");
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto scrollbar-thin py-2">
-        {messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center max-w-sm">
-              <div className="w-12 h-12 rounded-full bg-accent-500/10 border border-accent-500/20 flex items-center justify-center mx-auto mb-4">
-                <Bot size={24} className="text-accent-400" />
-              </div>
-              <p className="text-base font-semibold text-white mb-1">Mission Control Ready</p>
-              <p className="text-sm text-dark-400 mb-4 leading-relaxed">
-                Your AI engineering team is standing by. Describe what you want to build and the Boss Agent will assemble a team.
-              </p>
-              <div className="flex items-center justify-center gap-1.5 text-xs text-dark-500">
-                <Sparkles size={12} />
-                <span>Type a message to get started</span>
-                <Sparkles size={12} />
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div>
-            {messages.map((msg, i) => (
-              <EventCard key={msg.id} msg={msg} isLast={i === messages.length - 1} />
-            ))}
-          </div>
-        )}
-        <div ref={bottomRef} />
+    <div className="flex flex-col h-full overflow-hidden bg-dark-950">
+      {/* Channel header */}
+      <div className="px-4 py-3 border-b border-dark-700 bg-dark-900">
+        <div className="flex items-center gap-3">
+          <span className="text-primary-400 font-mono text-sm">#{activeChannel}</span>
+          <span className="text-dark-500 text-sm">|</span>
+          <span className="text-dark-400 text-sm">
+            {channelMessages.length} message{channelMessages.length !== 1 ? "s" : ""}
+          </span>
+        </div>
       </div>
 
-      <div className="border-t border-dark-700/60 p-3 bg-dark-950/50">
-        <div className="flex gap-2 max-w-3xl">
-          <input
-            type="text"
+      {/* Message list */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {channelMessages.length === 0 && !streamingChunk && (
+          <div className="flex flex-col items-center justify-center h-full text-dark-500">
+            <div className="text-lg mb-2">No messages yet</div>
+            <div className="text-sm">Start by sending a message or creating a project</div>
+          </div>
+        )}
+        {channelMessages.map((msg, idx) => (
+          <EventCard
+            key={msg.id}
+            msg={msg}
+            isLast={idx === channelMessages.length - 1}
+            agents={agents}
+          />
+        ))}
+        {streamingChunk && !streamingChunk.done && (
+          <EventCard
+            msg={{
+              id: `streaming-${streamingChunk.agentId}`,
+              project_id: "",
+              sender_id: streamingChunk.agentId,
+              sender_name: agents.find((a) => a.id === streamingChunk.agentId)?.name || "Agent",
+              sender_role: agents.find((a) => a.id === streamingChunk.agentId)?.role || "agent",
+              content: streamingChunk.content + "▌",
+              msg_type: "chat",
+              channel: activeChannel,
+              reply_to: null,
+              mentions: [],
+              attachments: [],
+              metadata: {},
+              timestamp: new Date().toISOString(),
+            }}
+            isLast={true}
+            agents={agents}
+            isStreaming={true}
+          />
+        )}
+        <div ref={endRef} />
+      </div>
+
+      {/* Input bar */}
+      <div className="p-4 border-t border-dark-700 bg-dark-900">
+        <div className="flex items-end gap-2">
+          <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSend()}
-            placeholder={hasBoss ? "Message the team..." : "Describe your project..."}
-            className="flex-1 bg-dark-800 border border-dark-700 rounded-lg px-3 py-2 text-sm text-white placeholder-dark-500 focus:outline-none focus:border-accent-500/50 focus:ring-1 focus:ring-accent-500/20 transition-all"
+            onKeyDown={handleKeyDown}
+            placeholder={hasBoss ? `Message #${activeChannel}...` : "Create a project first"}
+            disabled={!hasBoss}
+            className="flex-1 bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-white placeholder-dark-500 resize-none focus:outline-none focus:ring-2 focus:ring-primary-500"
+            rows={1}
+            style={{ minHeight: "44px", maxHeight: "120px" }}
           />
           <button
             onClick={handleSend}
-            disabled={!input.trim()}
-            className="bg-accent-600 hover:bg-accent-700 disabled:bg-dark-700 disabled:text-dark-500 text-white px-3 py-2 rounded-lg transition-colors"
+            disabled={!input.trim() || !hasBoss}
+            className="p-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
           >
-            <Send size={16} />
+            <Send className="w-5 h-5" />
           </button>
         </div>
       </div>

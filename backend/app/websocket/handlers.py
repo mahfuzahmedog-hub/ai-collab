@@ -6,6 +6,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from app.websocket.manager import ws_manager
 from app.core.event_bus import event_bus
 from app.services.agent_manager import agent_manager
+from app.db.repository import load_project_messages, load_project_agents, load_project
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                 elif msg_type == "chat":
                     content = data.get("content", "")
                     sender = data.get("sender_name", "User")
+                    channel = data.get("channel", "general")
                     msg = {
                         "type": "message",
                         "id": f"msg-{uuid4().hex[:8]}",
@@ -40,6 +42,7 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                         "sender_role": "user",
                         "content": content,
                         "msg_type": "chat",
+                        "channel": channel,
                         "reply_to": None,
                         "mentions": [],
                         "attachments": [],
@@ -48,7 +51,7 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                     }
                     await event_bus.publish("message", msg)
 
-                    if agent_manager.boss:
+                    if agent_manager.boss and agent_manager.boss.agent.project_id == project_id:
                         await agent_manager.boss.handle_user_request(project_id, content)
 
                 elif msg_type == "command":
@@ -69,6 +72,7 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
 async def handle_command(project_id: str, command: str, args: dict, ws: WebSocket):
     from app.models.project import Project
     from app.models.agent import AgentRole
+    from app.workspace.manager import get_file_tree
 
     if command == "create_project":
         try:
@@ -94,7 +98,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
     elif command == "delegate":
         task_title = args.get("task", "")
         role = args.get("role", "")
-        if agent_manager.boss:
+        if agent_manager.boss and agent_manager.boss.agent.project_id == project_id:
             task = await agent_manager.boss.create_task(task_title, assigned_role=role)
             await ws.send_text(json.dumps({
                 "type": "task_created",
@@ -124,3 +128,59 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             "type": "status",
             "agents": agents,
         }))
+
+    elif command == "load_project":
+        # Load project history from DB
+        messages = await load_project_messages(project_id, limit=200)
+        agents = await load_project_agents(project_id)
+        proj = await load_project(project_id)
+        file_tree = await get_file_tree(project_id)
+        
+        await ws.send_text(json.dumps({
+            "type": "message_history",
+            "messages": [m.model_dump() for m in messages],
+        }))
+        await ws.send_text(json.dumps({
+            "type": "status",
+            "agents": [a.model_dump() for a in agents],
+        }))
+        await ws.send_text(json.dumps({
+            "type": "project_data",
+            "project": proj.model_dump() if proj else None,
+        }))
+        await ws.send_text(json.dumps({
+            "type": "file_tree",
+            "files": file_tree,
+        }))
+
+    elif command == "switch_project":
+        new_project_id = args.get("project_id", "")
+        if new_project_id:
+            # Switch agent manager to new project
+            await agent_manager.switch_project(new_project_id)
+            # Load new project data
+            messages = await load_project_messages(new_project_id, limit=200)
+            agents = await load_project_agents(new_project_id)
+            proj = await load_project(new_project_id)
+            file_tree = await get_file_tree(new_project_id)
+            
+            await ws.send_text(json.dumps({
+                "type": "message_history",
+                "messages": [m.model_dump() for m in messages],
+            }))
+            await ws.send_text(json.dumps({
+                "type": "status",
+                "agents": [a.model_dump() for a in agents],
+            }))
+            await ws.send_text(json.dumps({
+                "type": "project_data",
+                "project": proj.model_dump() if proj else None,
+            }))
+            await ws.send_text(json.dumps({
+                "type": "file_tree",
+                "files": file_tree,
+            }))
+            await ws.send_text(json.dumps({
+                "type": "project_switched",
+                "project_id": new_project_id,
+            }))

@@ -1,16 +1,40 @@
 import { create } from "zustand";
-import type { Agent, Task, Message, Project, AgentStatus } from "@/types";
+import type { Agent, Task, Message, Project, AgentStatus, Channel, FileNode } from "@/types";
 
 interface AppState {
+  // Project state
+  projects: Project[];
+  activeProjectId: string | null;
   project: Project | null;
+
+  // Channel state
+  channels: Channel[];
+  activeChannel: string;
+
+  // Agents, tasks, messages
   agents: Agent[];
   tasks: Task[];
   messages: Message[];
+
+  // File tree
+  files: FileNode[];
+
+  // Streaming
+  streamingChunk: { agentId: string; content: string; done: boolean } | null;
+
+  // Connection
   connected: boolean;
-  darkMode: boolean;
+
+  // UI state
   activeTab: string;
 
+  // Actions
+  setProjects: (p: Project[]) => void;
+  setActiveProjectId: (id: string) => void;
   setProject: (p: Project) => void;
+  setChannels: (c: Channel[]) => void;
+  addChannel: (c: Channel) => void;
+  setActiveChannel: (id: string) => void;
   setAgents: (a: Agent[]) => void;
   addAgent: (a: Agent) => void;
   updateAgentStatus: (id: string, status: AgentStatus) => void;
@@ -19,21 +43,34 @@ interface AppState {
   addTask: (t: Task) => void;
   updateTask: (id: string, data: Partial<Task>) => void;
   addMessage: (m: Message) => void;
+  setMessages: (m: Message[]) => void;
+  setFiles: (f: FileNode[]) => void;
+  setStreamingChunk: (chunk: { agentId: string; content: string; done: boolean } | null) => void;
   setConnected: (c: boolean) => void;
-  toggleDarkMode: () => void;
   setActiveTab: (t: string) => void;
+  clearProjectData: () => void;
 }
 
 export const useStore = create<AppState>((set) => ({
+  projects: [],
+  activeProjectId: null,
   project: null,
+  channels: [],
+  activeChannel: "general",
   agents: [],
   tasks: [],
   messages: [],
+  files: [],
+  streamingChunk: null,
   connected: false,
-  darkMode: true,
   activeTab: "workspace",
 
+  setProjects: (p) => set({ projects: p }),
+  setActiveProjectId: (id) => set({ activeProjectId: id }),
   setProject: (p) => set({ project: p }),
+  setChannels: (c) => set({ channels: c }),
+  addChannel: (c) => set((s) => ({ channels: [...s.channels, c] })),
+  setActiveChannel: (id) => set({ activeChannel: id }),
   setAgents: (a) => set({ agents: a }),
   addAgent: (a) => set((s) => ({ agents: [...s.agents, a] })),
   updateAgentStatus: (id, status) =>
@@ -49,7 +86,20 @@ export const useStore = create<AppState>((set) => ({
       tasks: s.tasks.map((t) => (t.id === id ? { ...t, ...data } : t)),
     })),
   addMessage: (m) => set((s) => ({ messages: [...s.messages, m] })),
+  setMessages: (m) => set({ messages: m }),
+  setFiles: (f) => set({ files: f }),
+  setStreamingChunk: (chunk) => set({ streamingChunk: chunk }),
   setConnected: (c) => set({ connected: c }),
-  toggleDarkMode: () => set((s) => ({ darkMode: !s.darkMode })),
   setActiveTab: (t) => set({ activeTab: t }),
+  clearProjectData: () =>
+    set({
+      agents: [],
+      tasks: [],
+      messages: [],
+      files: [],
+      channels: [],
+      activeChannel: "general",
+      project: null,
+      streamingChunk: null,
+    }),
 }));

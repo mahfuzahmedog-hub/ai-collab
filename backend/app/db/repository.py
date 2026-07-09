@@ -41,8 +41,8 @@ async def save_agent(agent: Agent):
             for k, v in data.items():
                 setattr(existing, k, v)
         else:
-            s.add(AgentModel(id=agent.id, created_at=now, **data))
-        await s.commit()
+            session.add(AgentModel(id=agent.id, created_at=now, **data))
+        await session.commit()
 
 
 async def load_agent(agent_id: str) -> Optional[Agent]:
@@ -103,6 +103,7 @@ async def save_message(msg: Message):
             sender_role=msg.sender_role,
             content=msg.content,
             msg_type=msg.msg_type,
+            channel=msg.channel,
             reply_to=msg.reply_to,
             mentions=msg.mentions,
             attachments=msg.attachments,
@@ -130,6 +131,7 @@ async def load_project_messages(project_id: str, limit: int = 200) -> list[Messa
                 sender_role=row.sender_role,
                 content=row.content,
                 msg_type=row.msg_type,
+                channel=row.channel,
                 reply_to=row.reply_to,
                 mentions=row.mentions or [],
                 attachments=row.attachments or [],
@@ -193,3 +195,26 @@ async def save_project(project: Project):
         else:
             s.add(ProjectModel(id=project.id, created_at=datetime.utcnow(), **data))
         await s.commit()
+
+
+async def load_project(project_id: str) -> Optional[Project]:
+    async with async_session() as s:
+        result = await s.execute(select(ProjectModel).where(ProjectModel.id == project_id))
+        row = result.scalar_one_or_none()
+        if not row:
+            return None
+        return Project(
+            id=row.id,
+            title=row.title,
+            description=row.description,
+            status=row.status,
+            boss_agent_id=row.boss_agent_id,
+            agent_ids=row.agent_ids or [],
+            task_ids=row.task_ids or [],
+            user_id=row.user_id,
+            requirements=row.requirements,
+            deliverables=row.deliverables or [],
+            knowledge_base=row.knowledge_base or {},
+            created_at=row.created_at.isoformat() + "Z" if row.created_at else "",
+            updated_at=row.updated_at.isoformat() + "Z" if row.updated_at else "",
+        )

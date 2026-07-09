@@ -120,14 +120,8 @@ class BossAgent(BaseAgent):
         await self.send_message(project.id, f"🚀 Project '{project.title}' initialized. I am your Boss Agent, {self.name}. Let me analyze this project and build a team.", msg_type="system")
 
     def _parse_actions(self, text: str) -> list[dict]:
-        matches = re.findall(r'\[ACTION\](.*?)\[/ACTION\]', text, re.DOTALL)
-        actions = []
-        for m in matches:
-            try:
-                actions.append(json.loads(m.strip()))
-            except json.JSONDecodeError:
-                logger.warning("BossAgent: failed to parse action: %s", m[:120])
-        return actions
+        # Use base class implementation
+        return super()._parse_actions(text)
 
     async def _execute_action(self, action: dict):
         t = action.get("type")
@@ -193,8 +187,9 @@ Respond professionally as the Boss Agent. If this is a new project request, anal
         if not self.project:
             return
 
-        await self.send_message(self.project.id, f"📋 Building team for '{self.project.title}'...", msg_type="system")
+        await self.send_message(self.project.id, f"Building team for '{self.project.title}'...", msg_type="system", channel="general")
 
+        role_channels = set()
         for role_info in required_roles:
             role = role_info.get("role", AgentRole.backend)
             name = role_info.get("name", f"{role.value.title()}-{len(self.team) + 1}")
@@ -213,13 +208,31 @@ Respond professionally as the Boss Agent. If this is a new project request, anal
             self.project.agent_ids.append(agent_model.id)
             asyncio.create_task(save_agent(agent_model))
 
-            await worker.send_message(self.project.id, f"👋 Hello team! I'm {name}, your {role.value}. Ready to contribute!")
+            # Auto-create channel for this role
+            channel = role.value
+            role_channels.add(channel)
+            await event_bus.publish("channel_created", {
+                "project_id": self.project.id,
+                "channel": channel,
+                "name": f"#{channel}",
+            })
+
+            await worker.send_message(self.project.id, f"Hello team! I'm {name}, your {role.value}. Ready to contribute!", channel="general")
             await asyncio.sleep(0.5)
+
+        # Announce channels
+        for ch in role_channels:
+            await event_bus.publish("channel_created", {
+                "project_id": self.project.id,
+                "channel": ch,
+                "name": f"#{ch}",
+            })
 
         await self.send_message(
             self.project.id,
-            f"✅ Team created with {len(self.team)} members. Let's start working!",
+            f"Team created with {len(self.team)} members. Let's start working!",
             msg_type="system",
+            channel="general",
         )
 
     async def create_task(self, title: str, description: str = "", priority: TaskPriority = TaskPriority.medium, assigned_role: Optional[str] = None) -> Task:

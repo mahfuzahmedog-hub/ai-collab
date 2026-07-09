@@ -1,4 +1,4 @@
-import type { Agent, Task, Message } from "@/types";
+import type { Agent, Task, Message, Project, Channel, FileNode } from "@/types";
 import { useStore } from "@/store";
 
 let ws: WebSocket | null = null;
@@ -53,7 +53,7 @@ export function connect() {
     }
     if (!projectInitialized) {
       projectInitialized = true;
-      sendCommand("create_project", { title: "My Project", description: "New AI collaboration project" });
+      sendCommand("load_project", { project_id: pid });
     }
   };
 
@@ -89,8 +89,8 @@ export function send(data: Record<string, any>) {
   }
 }
 
-export function sendChat(content: string) {
-  send({ type: "chat", content, sender_name: "User" });
+export function sendChat(content: string, channel = "general") {
+  send({ type: "chat", content, sender_name: "User", channel });
 }
 
 export function sendCommand(command: string, args: Record<string, any> = {}) {
@@ -102,7 +102,11 @@ function handleMessage(data: any) {
 
   switch (data.type) {
     case "message":
-      store.addMessage(data as Message);
+      // Only add if it matches the active channel or is general
+      const activeChannel = store.activeChannel;
+      if (data.channel === activeChannel || data.channel === "general") {
+        store.addMessage(data as Message);
+      }
       break;
 
     case "agent_created":
@@ -138,6 +142,48 @@ function handleMessage(data: any) {
 
     case "status":
       if (data.agents) store.setAgents(data.agents);
+      break;
+
+    case "message_history":
+      if (data.messages) store.setMessages(data.messages as Message[]);
+      break;
+
+    case "project_data":
+      if (data.project) {
+        store.setProject(data.project as Project);
+        store.setActiveProjectId(data.project.id);
+      }
+      break;
+
+    case "file_tree":
+      if (data.files) store.setFiles(data.files as FileNode[]);
+      break;
+
+    case "channel_created":
+      store.addChannel({
+        id: data.channel,
+        name: data.name,
+        project_id: data.project_id,
+        unread: false,
+      } as Channel);
+      break;
+
+    case "project_switched":
+      store.setActiveProjectId(data.project_id);
+      break;
+
+    case "stream_chunk":
+      if (data.agent_id && data.content) {
+        store.setStreamingChunk({
+          agentId: data.agent_id,
+          content: data.content,
+          done: data.done === true,
+        });
+      }
+      break;
+
+    case "file_changed":
+      // Could refresh file tree here
       break;
 
     case "pong":

@@ -84,6 +84,7 @@ class MessageModel(Base):
     sender_role = Column(String(50), default="")
     content = Column(Text, nullable=False)
     msg_type = Column(String(50), default="chat")
+    channel = Column(String(50), default="general")
     reply_to = Column(String, nullable=True)
     mentions = Column(JSON, default=list)
     attachments = Column(JSON, default=list)

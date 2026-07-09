@@ -1,113 +1,109 @@
 "use client";
 
+import { useState } from "react";
 import { useStore } from "@/store";
-import { clsx } from "clsx";
-import {
-  Activity,
-  Bot,
-  CheckSquare,
-  Layers,
-  LayoutDashboard,
-} from "lucide-react";
-
-const tabs = [
-  { id: "workspace", label: "Activity", icon: Activity },
-  { id: "agents", label: "Agents", icon: Bot },
-  { id: "tasks", label: "Tasks", icon: CheckSquare },
-];
-
-const bossStatusColor: Record<string, string> = {
-  idle: "bg-dark-500",
-  thinking: "bg-yellow-400 animate-pulse",
-  working: "bg-green-500 pulse-working",
-  waiting: "bg-blue-500",
-  blocked: "bg-red-500",
-  reviewing: "bg-purple-500",
-  testing: "bg-orange-500",
-  done: "bg-emerald-500",
-};
+import { Hash, MessageSquare, Users, CheckSquare, Plus } from "lucide-react";
 
 export function LeftNav() {
-  const activeTab = useStore((s) => s.activeTab);
-  const setActiveTab = useStore((s) => s.setActiveTab);
-  const agents = useStore((s) => s.agents);
-  const tasks = useStore((s) => s.tasks);
+  const channels = useStore((s) => s.channels);
+  const activeChannel = useStore((s) => s.activeChannel);
+  const setActiveChannel = useStore((s) => s.setActiveChannel);
+  const activeProjectId = useStore((s) => s.activeProjectId);
+  const project = useStore((s) => s.project);
   const connected = useStore((s) => s.connected);
+  const [showCreateChannel, setShowCreateChannel] = useState(false);
+  const [newChannelName, setNewChannelName] = useState("");
 
-  const boss = agents.find((a) => a.role === "boss");
-  const workerCount = agents.filter((a) => a.role !== "boss").length;
+  const handleCreateChannel = () => {
+    if (!newChannelName.trim() || !activeProjectId) return;
+    const channel = {
+      id: newChannelName.toLowerCase().replace(/[^a-z0-9]/g, "-"),
+      name: `#${newChannelName}`,
+      project_id: activeProjectId,
+      unread: false,
+    };
+    setActiveChannel(channel.id);
+    useStore.getState().addChannel(channel);
+    setShowCreateChannel(false);
+    setNewChannelName("");
+  };
 
   return (
-    <nav className="w-56 bg-dark-900 border-r border-dark-700/60 flex flex-col h-full shrink-0 z-10">
-      <div className="px-4 py-3 border-b border-dark-700/60">
-        <div className="flex items-center gap-2">
-          <Layers size={16} className="text-accent-400" />
-          <h2 className="text-sm font-bold text-white tracking-wide">AI Collab</h2>
+    <aside className="w-56 flex-shrink-0 bg-dark-900 border-r border-dark-700 flex flex-col h-full">
+      {/* Project header */}
+      <div className="p-4 border-b border-dark-700">
+        <div className="flex items-center gap-2 mb-3">
+          <Hash className="w-5 h-5 text-primary-400" />
+          <span className="font-semibold text-white">AI Collab</span>
         </div>
+        {project && (
+          <div className="text-xs text-dark-400 truncate">{project.title}</div>
+        )}
       </div>
 
-      {boss && (
-        <div className="mx-2.5 mt-2.5 mb-1 p-2.5 rounded-lg bg-accent-500/5 border border-accent-500/15">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-accent-500/15 flex items-center justify-center shrink-0 ring-1 ring-accent-500/30">
-              <LayoutDashboard size={14} className="text-accent-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-semibold text-accent-300 truncate">{boss.name}</span>
-                <div className={clsx("w-1.5 h-1.5 rounded-full shrink-0", bossStatusColor[boss.status] || "bg-dark-500")} />
-              </div>
-              <p className="text-[10px] text-dark-400 truncate">Engineering Manager</p>
-            </div>
+      {/* Channels */}
+      <div className="flex-1 overflow-y-auto p-2">
+        <div className="flex items-center justify-between mb-2 px-2">
+          <span className="text-xs font-semibold text-dark-400 uppercase tracking-wider">
+            Channels
+          </span>
+          <button
+            onClick={() => setShowCreateChannel(true)}
+            className="text-dark-400 hover:text-white p-1 rounded"
+            title="Create channel"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
+
+        {showCreateChannel && (
+          <div className="px-2 mb-2">
+            <input
+              type="text"
+              value={newChannelName}
+              onChange={(e) => setNewChannelName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleCreateChannel()}
+              placeholder="Channel name"
+              className="w-full px-2 py-1.5 bg-dark-800 border border-dark-600 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
+              autoFocus
+            />
           </div>
-          <div className="mt-1.5 flex gap-2.5 text-[10px] text-dark-500">
-            <span className="text-dark-400">{workerCount} agent{workerCount !== 1 ? "s" : ""}</span>
-            <span className="text-dark-400">{tasks.length} task{tasks.length !== 1 ? "s" : ""}</span>
-          </div>
-        </div>
-      )}
+        )}
 
-      <div className="flex-1 py-2">
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={clsx(
-                "w-full flex items-center gap-2.5 px-4 py-2 text-sm transition-colors",
-                activeTab === tab.id
-                  ? "bg-accent-600/10 text-accent-400 border-r-2 border-accent-500"
-                  : "text-dark-300 hover:text-white hover:bg-dark-800/50"
-              )}
-            >
-              <Icon size={15} />
-              <span>{tab.label}</span>
-              {tab.id === "agents" && agents.length > 0 && (
-                <span className="ml-auto text-[10px] bg-dark-700 text-dark-400 px-1.5 py-0.5 rounded-full leading-none">
-                  {agents.length}
-                </span>
-              )}
-              {tab.id === "tasks" && tasks.length > 0 && (
-                <span className="ml-auto text-[10px] bg-dark-700 text-dark-400 px-1.5 py-0.5 rounded-full leading-none">
-                  {tasks.length}
-                </span>
-              )}
-              {tab.id === "workspace" && (
-                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-accent-500/60" />
-              )}
-            </button>
-          );
-        })}
+        <ul className="space-y-1">
+          {channels.map((ch) => (
+            <li key={ch.id}>
+              <button
+                onClick={() => setActiveChannel(ch.id)}
+                className={`w-full px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${
+                  activeChannel === ch.id
+                    ? "bg-primary-600/20 text-white"
+                    : "text-dark-300 hover:bg-dark-700 hover:text-white"
+                }`}
+              >
+                <Hash className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">{ch.name}</span>
+                {ch.unread && (
+                  <span className="ml-auto w-1.5 h-1.5 rounded-full bg-red-500" />
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
       </div>
 
-      <div className="px-4 py-2.5 border-t border-dark-700/60">
-        <div className="flex items-center gap-1.5 mb-0.5">
-          <div className={clsx("w-1.5 h-1.5 rounded-full", connected ? "bg-green-500" : "bg-red-500")} />
-          <span className="text-[10px] text-dark-500">{connected ? "Connected" : "Offline"}</span>
+      {/* Connection status */}
+      <div className="p-3 border-t border-dark-700">
+        <div className="flex items-center gap-2 text-xs text-dark-400">
+          <span
+            className={`w-2 h-2 rounded-full ${
+              connected ? "bg-green-500" : "bg-red-500"
+            }`}
+          />
+          <span>{connected ? "Connected" : "Disconnected"}</span>
         </div>
-        <p className="text-[10px] text-dark-600">AI Collab v0.1</p>
+        <div className="text-xs text-dark-500 mt-1">v0.2.0</div>
       </div>
-    </nav>
+    </aside>
   );
 }
