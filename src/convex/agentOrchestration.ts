@@ -3,9 +3,8 @@ import { action } from "./_generated/server";
 import { api } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 
-// ─── Simulated Response Engine ──────────────────────────────────────────────
-// Generates contextual responses based on agent persona + message content.
-// Swap in a real LLM call later (e.g. api.llm.generateAgentResponse).
+// ─── Response Engine ─────────────────────────────────────────────────────────
+// Uses real LLM when OMNIROUTE_API_KEY is configured, falls back to simulated responses.
 
 type AgentInfo = {
   _id: string;
@@ -14,7 +13,13 @@ type AgentInfo = {
   emoji?: string;
   description?: string;
   capabilities?: string[];
+  systemPrompt?: string;
+  llmModel?: string;
+  temperature?: number;
+  maxTokens?: number;
 };
+
+const OMNIROUTE_API_KEY = process.env.OMNIROUTE_API_KEY;
 
 const BOSS_RESPONSES = [
   "Great question! Let me think about the best approach here. I'll have the team look into this.",
@@ -238,7 +243,7 @@ export const processUserMessage = action({
 
     if (respondingAgents.length === 0) return messageId;
 
-    // 4. Get response templates per agent
+    // Response template map for simulated fallback
     const responseMap: Record<string, string[]> = {
       Boss: BOSS_RESPONSES,
       Researcher: RESEARCHER_RESPONSES,
@@ -257,9 +262,35 @@ export const processUserMessage = action({
         status: "working",
       });
 
-      // Generate response
-      const templates = responseMap[agent.name] ?? BOSS_RESPONSES;
-      const response = generateSimulatedResponse(agent, args.content, templates);
+      // Generate response - use real LLM if OmniRoute configured, otherwise simulated
+      let response: string;
+      if (OMNIROUTE_API_KEY) {
+        // Get conversation history for context
+        const recentMessages = await ctx.runQuery(api.messages.list, {
+          channelId: args.channelId,
+          limit: 20,
+        });
+        const conversationHistory = (recentMessages ?? [])
+          .filter((m: any) => m._id !== messageId)
+          .map((m: any) => ({
+            role: m.senderType === "agent" ? "assistant" : "user",
+            content: m.content,
+            name: m.senderName,
+          }));
+
+        response = await ctx.runAction(api.llm.generateAgentResponse, {
+          agentId: agent._id as any,
+          projectId: args.projectId,
+          channelId: args.channelId,
+          userMessage: args.content,
+          conversationHistory,
+          provider: "omniroute",
+        });
+      } else {
+        // Fallback to simulated responses
+        const templates = responseMap[agent.name] ?? BOSS_RESPONSES;
+        response = generateSimulatedResponse(agent, args.content, templates);
+      }
 
       // Small delay so responses feel realistic (300ms between agents)
       await sleep(300);

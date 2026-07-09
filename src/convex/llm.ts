@@ -14,6 +14,10 @@ const PROVIDERS: Record<string, { baseUrl: string; defaultModel: string }> = {
     baseUrl: "https://api.anthropic.com/v1",
     defaultModel: "claude-3-5-sonnet-20241022",
   },
+  omniroute: {
+    baseUrl: "http://localhost:20128/v1",
+    defaultModel: "auto",
+  },
 };
 
 interface LLMMessage {
@@ -32,16 +36,27 @@ export const chat = action({
       }),
     ),
     model: v.optional(v.string()),
+    provider: v.optional(v.union(v.literal("openai"), v.literal("anthropic"), v.literal("omniroute"))),
     temperature: v.optional(v.number()),
     maxTokens: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<string> => {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return "I'm sorry, I don't have an API key configured yet. Please add your OpenAI API key to use this feature.";
+    const providerName = args.provider ?? "openai";
+    const provider = PROVIDERS[providerName];
+    if (!provider) {
+      return `Unknown provider: ${providerName}`;
     }
 
-    const provider = PROVIDERS.openai;
+    const apiKey = providerName === "omniroute" 
+      ? process.env.OMNIROUTE_API_KEY 
+      : providerName === "anthropic"
+        ? process.env.ANTHROPIC_API_KEY
+        : process.env.OPENAI_API_KEY;
+
+    if (!apiKey) {
+      return `I'm sorry, I don't have an API key configured for ${providerName}. Please add the API key to use this feature.`;
+    }
+
     const model = args.model ?? provider.defaultModel;
 
     try {
@@ -89,6 +104,7 @@ export const generateAgentResponse = action({
         name: v.optional(v.string()),
       }),
     ),
+    provider: v.optional(v.union(v.literal("openai"), v.literal("anthropic"), v.literal("omniroute"))),
   },
   handler: async (ctx, args): Promise<string> => {
     const agent = await ctx.runQuery(api.agents.get, { agentId: args.agentId });
@@ -113,6 +129,7 @@ Keep your responses clear and conversational.`;
     const response = await ctx.runAction(api.llm.chat, {
       messages,
       model: agent.llmModel ?? "gpt-4o",
+      provider: args.provider,
       temperature: agent.temperature ?? 0.7,
       maxTokens: agent.maxTokens ?? 1024,
     });

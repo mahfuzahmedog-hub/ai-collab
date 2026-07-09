@@ -479,7 +479,8 @@ src/lib/
 ## 11. To Do / Future Work
 
 ### Short Term
-- [ ] **OpenAI API Key**: Add `OPENAI_API_KEY` to Keys tab, swap simulated responses for real LLM calls in `agentOrchestration.ts`
+- [x] **OmniRoute LLM Integration**: Added OmniRoute as a provider in `src/convex/llm.ts` with `OMNIROUTE_API_KEY`, `OMNIROUTE_BASE_URL`, `OMNIROUTE_DEFAULT_MODEL` env vars. `agentOrchestration.ts` now uses real LLM when `OMNIROUTE_API_KEY` is set, falling back to simulated responses otherwise.
+- [ ] **Convex Env Setup**: Run `npx convex env set OMNIROUTE_API_KEY "your-key"` to enable real LLM responses in the deployed Convex backend.
 - [ ] **Preview Fix**: App may not render in Freebuff preview due to Convex auth initialization — may need to check browser console errors
 - [ ] **Typing Indicators**: Show which agent is currently "working" (animated dots in message area)
 
