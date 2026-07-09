@@ -282,38 +282,45 @@ class OmniRouteProvider(LLMProvider):
 
     async def chat(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096) -> str:
         async with httpx.AsyncClient(timeout=120) as client:
+            body = {
+                "model": self.config.model or "auto",
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "stream": False,
+            }
+            if self.config.model and self.config.model.startswith("mcode/"):
+                body["thinking"] = {"type": "disabled"}
             resp = await client.post(
                 f"{self.config.base_url}/chat/completions",
                 headers={
                     "Authorization": f"Bearer {self.config.api_key}",
                     "Content-Type": "application/json",
                 },
-                json={
-                    "model": self.config.model or "auto",
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                    "stream": False,
-                },
+                json=body,
             )
             resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"]
+            choice = resp.json()["choices"][0]["message"]
+            return choice.get("content") or choice.get("reasoning_content", "")
 
     async def chat_stream(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096):
         async with httpx.AsyncClient(timeout=300) as client:
+            body = {
+                "model": self.config.model or "auto",
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "stream": True,
+            }
+            if self.config.model and self.config.model.startswith("mcode/"):
+                body["thinking"] = {"type": "disabled"}
             async with client.stream(
                 "POST", f"{self.config.base_url}/chat/completions",
                 headers={
                     "Authorization": f"Bearer {self.config.api_key}",
                     "Content-Type": "application/json",
                 },
-                json={
-                    "model": self.config.model or "auto",
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                    "stream": True,
-                },
+                json=body,
             ) as resp:
                 async for line in resp.aiter_lines():
                     if line.startswith("data: "):
