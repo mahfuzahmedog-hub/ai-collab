@@ -44,6 +44,8 @@ export function connect() {
   if (wsEnvUrl) {
     const base = wsEnvUrl.replace(/^https?:\/\//, "").replace(/^ws[s]?:\/\//, "");
     url = `wss://${base}/ws/${pid}/user`;
+  } else if (window.location.hostname !== "localhost") {
+    url = `wss://ai-collab-backend-j6xe.onrender.com/ws/${pid}/user`;
   } else {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     url = `${protocol}//localhost:8000/ws/${pid}/user`;
