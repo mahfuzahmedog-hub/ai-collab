@@ -14,8 +14,7 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
     await ws_manager.connect(websocket, project_id, user_id)
 
     async def on_event(data: dict):
-        if data.get("type") != "message":
-            await ws_manager.broadcast(project_id, data)
+        await ws_manager.broadcast(project_id, data)
 
     event_bus.subscribe("*", on_event)
 
