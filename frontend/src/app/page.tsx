@@ -3,33 +3,33 @@
 import { useEffect } from "react";
 import { useStore } from "@/store";
 import { connect } from "@/lib/websocket";
-import { Sidebar } from "@/components/shared/Sidebar";
-import { Workspace } from "@/components/workspace/index";
+import { TopBar } from "@/components/layout/TopBar";
+import { LeftNav } from "@/components/layout/LeftNav";
+import { AgentSidebar } from "@/components/layout/AgentSidebar";
+import { Dashboard } from "@/components/layout/Dashboard";
+import { Timeline } from "@/components/timeline/Timeline";
 import { AgentsPage } from "@/components/agents/Panel";
 import { TasksPage } from "@/components/tasks/Panel";
-import { Header } from "@/components/shared/Header";
 
 export default function Home() {
   const activeTab = useStore((s) => s.activeTab);
-  const connected = useStore((s) => s.connected);
 
   useEffect(() => {
     connect();
   }, []);
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar />
-      <div className="flex-1 flex flex-col">
-        <Header />
-        <main className="flex-1 overflow-hidden">
-          {activeTab === "workspace" && <Workspace />}
+    <div className="flex flex-col h-screen overflow-hidden">
+      <TopBar />
+      <div className="flex flex-1 overflow-hidden">
+        <LeftNav />
+        <AgentSidebar />
+        <main className="flex-1 overflow-hidden min-w-0">
+          {activeTab === "workspace" && <Timeline />}
           {activeTab === "agents" && <AgentsPage />}
           {activeTab === "tasks" && <TasksPage />}
         </main>
-      </div>
-      <div className="fixed bottom-4 right-4 z-50">
-        <div className={`w-3 h-3 rounded-full ${connected ? "bg-green-500" : "bg-red-500"}`} title={connected ? "Connected" : "Disconnected"} />
+        <Dashboard />
       </div>
     </div>
   );
