@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Optional
 from app.agents.base_agent import BaseAgent
@@ -10,6 +11,7 @@ from app.models.task import Task, TaskStatus, TaskPriority
 from app.models.project import Project, ProjectStatus
 from app.models.message import Message
 from app.core.event_bus import event_bus
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +73,22 @@ When a worker agent completes a task, review with a code review mindset:
 
 Persist until the task is fully handled end-to-end. Do not stop at analysis or partial delegation — carry through to implementation, review, and a clear outcome. If you encounter blockers, attempt to resolve them yourself before escalating.
 
+## Taking Action
+
+You create agents and delegate tasks by including structured action blocks in your responses. These blocks are invisible to the user — the system executes them automatically.
+
+Format: [ACTION]{"type":"...", ...}[/ACTION]
+
+Supported types:
+- create_agent: role (required, e.g. backend_engineer, frontend_engineer), name (optional), skills (optional list), personality (optional)
+- create_task: title (required), description (optional), assign_to (optional — agent name or role, e.g. "Backend-1" or "backend_engineer"), priority (optional: critical/high/medium/low)
+
+Create agents before assigning tasks to them. You can include multiple actions in a single response.
+
+Example:
+[ACTION]{"type":"create_agent","role":"backend_engineer","name":"Backend-1","skills":["python","fastapi","sql"]}[/ACTION]
+[ACTION]{"type":"create_task","title":"Build user auth API","description":"Implement login/signup with JWT","assign_to":"Backend-1","priority":"high"}[/ACTION]
+
 ## What Not To Do
 
 - Do not write code or files yourself. That is the workers' job.
@@ -98,6 +116,53 @@ class BossAgent(BaseAgent):
         self.agent.project_id = project.id
         await self.send_message(project.id, f"🚀 Project '{project.title}' initialized. I am your Boss Agent, {self.name}. Let me analyze this project and build a team.", msg_type="system")
 
+    def _parse_actions(self, text: str) -> list[dict]:
+        matches = re.findall(r'\[ACTION\](.*?)\[/ACTION\]', text, re.DOTALL)
+        actions = []
+        for m in matches:
+            try:
+                actions.append(json.loads(m.strip()))
+            except json.JSONDecodeError:
+                logger.warning("BossAgent: failed to parse action: %s", m[:120])
+        return actions
+
+    async def _execute_action(self, action: dict):
+        t = action.get("type")
+        if t == "create_agent":
+            role_name = action.get("role", "backend_engineer")
+            try:
+                role = AgentRole(role_name)
+            except ValueError:
+                logger.warning("BossAgent: invalid role in action: %s", role_name)
+                return
+            await self.create_team([{
+                "role": role,
+                "name": action.get("name"),
+                "skills": action.get("skills"),
+                "personality": action.get("personality"),
+            }])
+        elif t == "create_task":
+            assign_to = action.get("assign_to", "")
+            assigned_role = None
+            if assign_to:
+                for wid, w in self.team.items():
+                    if w.name == assign_to:
+                        assigned_role = w.agent.role.value
+                        break
+                if not assigned_role:
+                    assigned_role = assign_to
+            priority = TaskPriority.medium
+            try:
+                priority = TaskPriority(action.get("priority", "medium"))
+            except ValueError:
+                pass
+            await self.create_task(
+                title=action.get("title", "Untitled"),
+                description=action.get("description", ""),
+                priority=priority,
+                assigned_role=assigned_role,
+            )
+
     async def handle_user_request(self, project_id: str, user_message: str):
         prompt = f"""The user has sent this message:
 {user_message}
@@ -108,7 +173,11 @@ Team members: {', '.join(f'{a.name} ({a.role.value})' for a in self.team.values(
 Respond professionally as the Boss Agent. If this is a new project request, analyze it and decide what team you need. If there's an existing team, delegate work appropriately."""
 
         response = await self.think(prompt)
-        await self.send_message(project_id, response)
+        actions = self._parse_actions(response)
+        clean = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', response, flags=re.DOTALL).strip()
+        await self.send_message(project_id, clean or response)
+        for action in actions:
+            await self._execute_action(action)
 
     async def create_team(self, required_roles: list[dict]):
         if not self.project:
@@ -127,6 +196,7 @@ Respond professionally as the Boss Agent. If this is a new project request, anal
                 project_id=self.project.id,
                 skills=skills,
                 personality=role_info.get("personality", "professional and collaborative"),
+                provider=settings.llm_default_provider,
             )
             worker = WorkerAgent(agent_model)
             self.team[agent_model.id] = worker
@@ -163,6 +233,7 @@ Respond professionally as the Boss Agent. If this is a new project request, anal
                         f"📌 {worker.name}: I'm assigning you '{task.title}'.\n{description}",
                         mentions=[worker.name],
                     )
+                    asyncio.create_task(worker.work_on_task())
                     break
 
         await event_bus.publish("task_created", task.model_dump())
