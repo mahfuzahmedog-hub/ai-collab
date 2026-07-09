@@ -2,6 +2,7 @@ import asyncio
 import logging
 from typing import Optional
 from app.models.agent import Agent, AgentRole, AgentStatus
+from app.core.config import settings
 from app.agents.boss_agent import BossAgent
 from app.agents.worker_agent import WorkerAgent
 from app.core.event_bus import event_bus
