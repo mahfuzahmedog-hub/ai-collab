@@ -9,6 +9,26 @@ def gen_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
+class AgentModel(Base):
+    __tablename__ = "agents"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    name = Column(String(255), nullable=False)
+    role = Column(String(50), nullable=False)
+    project_id = Column(String, nullable=False)
+    personality = Column(String(500), default="professional and helpful")
+    status = Column(String(50), default="idle")
+    current_task_id = Column(String, nullable=True)
+    skills = Column(JSON, default=list)
+    provider = Column(String(50), default="openai")
+    model = Column(String(100), default="gpt-4o-mini")
+    temperature = Column(Float, default=0.7)
+    memory = Column(JSON, default=dict)
+    chat_history = Column(JSON, default=list)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_active = Column(DateTime, default=datetime.utcnow)
+
+
 class ProjectModel(Base):
     __tablename__ = "projects"
 
@@ -52,3 +72,20 @@ class TaskModel(Base):
     completed_at = Column(DateTime, nullable=True)
 
     project = relationship("ProjectModel", backref="tasks")
+
+
+class MessageModel(Base):
+    __tablename__ = "messages"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    project_id = Column(String, nullable=False)
+    sender_id = Column(String, nullable=False)
+    sender_name = Column(String(255), nullable=False)
+    sender_role = Column(String(50), default="")
+    content = Column(Text, nullable=False)
+    msg_type = Column(String(50), default="chat")
+    reply_to = Column(String, nullable=True)
+    mentions = Column(JSON, default=list)
+    attachments = Column(JSON, default=list)
+    msg_metadata = Column("metadata", JSON, default=dict)
+    timestamp = Column(DateTime, default=datetime.utcnow)

@@ -7,6 +7,7 @@ from app.models.agent import Agent, AgentStatus
 from app.models.message import Message
 from app.llm import llm_router
 from app.core.event_bus import event_bus
+from app.db.repository import save_agent, save_message
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +41,14 @@ class BaseAgent:
 
     async def think(self, prompt: str, temperature: Optional[float] = None) -> str:
         self.status = AgentStatus.thinking
+        memory_block = ""
+        if self.agent.memory.get("facts"):
+            memory_block = "\nMemory:\n" + "\n".join(
+                f"- {k}: {v}" for k, v in self.agent.memory["facts"].items()
+            )
         messages = [
-            {"role": "system", "content": self._system_prompt()},
-            *self.agent.chat_history[-20:],
+            {"role": "system", "content": self._system_prompt() + memory_block},
+            *self.agent.chat_history[-100:],
             {"role": "user", "content": prompt},
         ]
         try:
@@ -62,6 +68,7 @@ class BaseAgent:
         self.agent.chat_history.append({"role": "assistant", "content": response})
         self.agent.memory["short_term"].append({"prompt": prompt, "response": response})
         self.status = AgentStatus.idle
+        asyncio.create_task(save_agent(self.agent))
         return response
 
     async def think_stream(self, prompt: str, temperature: Optional[float] = None) -> AsyncGenerator[str, None]:
@@ -98,6 +105,7 @@ class BaseAgent:
             mentions=mentions or [],
         )
         await event_bus.publish("message", msg.model_dump())
+        asyncio.create_task(save_message(msg))
         return msg
 
     async def run(self):

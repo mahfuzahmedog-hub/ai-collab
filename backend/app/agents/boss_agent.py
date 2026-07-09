@@ -12,6 +12,7 @@ from app.models.project import Project, ProjectStatus
 from app.models.message import Message
 from app.core.event_bus import event_bus
 from app.core.config import settings
+from app.db.repository import save_agent, save_task, save_project
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,7 @@ Format: [ACTION]{"type":"...", ...}[/ACTION]
 Supported types:
 - create_agent: role (required, e.g. backend_engineer, frontend_engineer), name (optional), skills (optional list), personality (optional)
 - create_task: title (required), description (optional), assign_to (optional — agent name or role, e.g. "Backend-1" or "backend_engineer"), priority (optional: critical/high/medium/low)
+- remember: key (required), value (required) — store a fact about the project for all agents to reference
 
 Create agents before assigning tasks to them. You can include multiple actions in a single response.
 
@@ -114,6 +116,7 @@ class BossAgent(BaseAgent):
     async def initialize_project(self, project: Project):
         self.project = project
         self.agent.project_id = project.id
+        asyncio.create_task(save_project(project))
         await self.send_message(project.id, f"🚀 Project '{project.title}' initialized. I am your Boss Agent, {self.name}. Let me analyze this project and build a team.", msg_type="system")
 
     def _parse_actions(self, text: str) -> list[dict]:
@@ -141,6 +144,13 @@ class BossAgent(BaseAgent):
                 "skills": action.get("skills"),
                 "personality": action.get("personality"),
             }])
+        elif t == "remember":
+            key = action.get("key", "")
+            value = action.get("value", "")
+            if key and value:
+                if "facts" not in self.agent.memory:
+                    self.agent.memory["facts"] = {}
+                self.agent.memory["facts"][key] = value
         elif t == "create_task":
             assign_to = action.get("assign_to", "")
             assigned_role = None
@@ -201,6 +211,7 @@ Respond professionally as the Boss Agent. If this is a new project request, anal
             worker = WorkerAgent(agent_model)
             self.team[agent_model.id] = worker
             self.project.agent_ids.append(agent_model.id)
+            asyncio.create_task(save_agent(agent_model))
 
             await worker.send_message(self.project.id, f"👋 Hello team! I'm {name}, your {role.value}. Ready to contribute!")
             await asyncio.sleep(0.5)
@@ -237,6 +248,7 @@ Respond professionally as the Boss Agent. If this is a new project request, anal
                     break
 
         await event_bus.publish("task_created", task.model_dump())
+        asyncio.create_task(save_task(task))
         return task
 
     async def assign_task_to_agent(self, task_id: str, agent_id: str):
@@ -295,8 +307,5 @@ Respond professionally as the Boss Agent. If this is a new project request, anal
 
     async def start(self):
         await self.subscribe_events()
-        asyncio.create_task(self._monitor_loop())
 
-    async def _monitor_loop(self):
-        while True:
-            await asyncio.sleep(30)
+

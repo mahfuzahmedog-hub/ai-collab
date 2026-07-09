@@ -1,9 +1,11 @@
+import asyncio
 import logging
 from typing import Optional
 from app.models.agent import Agent, AgentRole, AgentStatus
 from app.agents.boss_agent import BossAgent
 from app.agents.worker_agent import WorkerAgent
 from app.core.event_bus import event_bus
+from app.db.repository import save_agent, load_project_agents, load_project_messages
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +26,33 @@ class AgentManager:
         self.boss = BossAgent(agent)
         await self.boss.start()
         await event_bus.publish("agent_created", agent.model_dump())
+        asyncio.create_task(save_agent(agent))
+        # ponytail: best-effort restore, don't block startup
+        asyncio.create_task(self._restore_project(project_id))
         return self.boss
+
+    async def _restore_project(self, project_id: str):
+        try:
+            workers = await load_project_agents(project_id)
+            for a in workers:
+                if a.role == AgentRole.boss:
+                    if self.boss:
+                        self.boss.agent.chat_history = a.chat_history
+                        self.boss.agent.memory = a.memory
+                elif a.id not in self.workers:
+                    w = WorkerAgent(a)
+                    self.workers[a.id] = w
+
+            msgs = await load_project_messages(project_id)
+            if self.boss:
+                for m in msgs:
+                    if m.msg_type not in ("task_update", "review"):
+                        self.boss.agent.chat_history.append(
+                            {"role": "user" if m.sender_role == "user" else "assistant", "content": m.content}
+                        )
+            logger.info("Restored %d workers, %d messages for project %s", len(workers), len(msgs), project_id)
+        except Exception as e:
+            logger.warning("Project restore skipped: %s", e)
 
     async def create_worker(self, project_id: str, name: str, role: AgentRole, skills: Optional[list[str]] = None) -> WorkerAgent:
         agent = Agent(
@@ -36,6 +64,7 @@ class AgentManager:
         worker = WorkerAgent(agent)
         self.workers[agent.id] = worker
         await event_bus.publish("agent_created", agent.model_dump())
+        asyncio.create_task(save_agent(agent))
         return worker
 
     async def get_agent(self, agent_id: str):
