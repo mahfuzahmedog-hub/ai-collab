@@ -13,3 +13,6 @@ dist/
 
 # local env overrides
 .env.local
+
+# workspace directories
+workspace/
