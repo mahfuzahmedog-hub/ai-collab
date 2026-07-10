@@ -16,3 +16,6 @@ dist/
 
 # workspace directories
 workspace/
+
+# ponytail agent config
+.ponytail/

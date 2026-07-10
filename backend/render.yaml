@@ -7,3 +7,13 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.0
+      - key: LLM_DEFAULT_PROVIDER
+        value: omniroute
+      - key: OMNIROUTE_BASE_URL
+        value: https://aye-significantly-mile-floppy.trycloudflare.com/v1
+
+datastores:
+  - type: postgres
+    name: ai-collab-db
+    plan: free
+    region: oregon
