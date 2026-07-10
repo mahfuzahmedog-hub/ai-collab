@@ -90,3 +90,15 @@ class MessageModel(Base):
     attachments = Column(JSON, default=list)
     msg_metadata = Column("metadata", JSON, default=dict)
     timestamp = Column(DateTime, default=datetime.utcnow)
+
+
+class FileModel(Base):
+    __tablename__ = "workspace_files"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    project_id = Column(String, nullable=False, index=True)
+    path = Column(String, nullable=False)
+    content = Column(Text, default="")
+    file_type = Column(String, default="file")  # "file" or "directory"
+    size = Column(Integer, default=0)
+    modified = Column(DateTime, default=datetime.utcnow)

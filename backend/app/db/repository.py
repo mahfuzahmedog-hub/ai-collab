@@ -6,7 +6,7 @@ from typing import Optional
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AgentModel, MessageModel, TaskModel, ProjectModel
+from app.db.models import AgentModel, MessageModel, TaskModel, ProjectModel, FileModel
 from app.db.session import async_session
 from app.models.agent import Agent, AgentStatus, AgentRole
 from app.models.task import Task, TaskStatus, TaskPriority
@@ -218,3 +218,59 @@ async def load_project(project_id: str) -> Optional[Project]:
             created_at=row.created_at.isoformat() + "Z" if row.created_at else "",
             updated_at=row.updated_at.isoformat() + "Z" if row.updated_at else "",
         )
+
+
+async def save_file_entry(project_id: str, path: str, content: str, file_type: str = "file"):
+    async with async_session() as s:
+        stmt = select(FileModel).where(
+            FileModel.project_id == project_id,
+            FileModel.path == path
+        )
+        result = await s.execute(stmt)
+        existing = result.scalar_one_or_none()
+        now = datetime.utcnow()
+        if existing:
+            existing.content = content
+            existing.size = len(content.encode("utf-8"))
+            existing.modified = now
+        else:
+            s.add(FileModel(
+                project_id=project_id,
+                path=path,
+                content=content,
+                file_type=file_type,
+                size=len(content.encode("utf-8")),
+                modified=now,
+            ))
+        await s.commit()
+
+
+async def load_file_entries(project_id: str) -> list[dict]:
+    async with async_session() as s:
+        result = await s.execute(
+            select(FileModel).where(FileModel.project_id == project_id)
+        )
+        rows = result.scalars().all()
+        return [
+            {
+                "name": row.path.split("/")[-1],
+                "path": row.path,
+                "type": row.file_type,
+                "size": row.size,
+                "modified": row.modified.timestamp() if row.modified else 0,
+            }
+            for row in rows
+        ]
+
+
+async def delete_file_entry(project_id: str, path: str):
+    async with async_session() as s:
+        stmt = select(FileModel).where(
+            FileModel.project_id == project_id,
+            FileModel.path == path
+        )
+        result = await s.execute(stmt)
+        row = result.scalar_one_or_none()
+        if row:
+            await s.delete(row)
+            await s.commit()
