@@ -28,7 +28,7 @@ const roleIcons: Record<string, string> = {
 };
 
 export function AgentCard({ agent }: { agent: Agent }) {
-  const isBoss = agent.role === "boss";
+  const isBoss = agent.role === "boss" || agent.role === "coworker";
 
   if (isBoss) {
     return (

@@ -6,7 +6,7 @@ import { AgentCard } from "@/components/agents/AgentCard";
 export function AgentsPage() {
   const agents = useStore((s) => s.agents);
 
-  const boss = agents.find((a) => a.role === "boss");
+  const boss = agents.find((a) => a.role === "boss" || a.role === "coworker");
   const workers = agents.filter((a) => a.role !== "boss");
 
   return (

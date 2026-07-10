@@ -45,7 +45,7 @@ export function Timeline() {
     }
   };
 
-  const hasBoss = agents.some((a) => a.role === "boss");
+  const hasBoss = agents.some((a) => a.role === "boss" || a.role === "coworker");
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-dark-950">
