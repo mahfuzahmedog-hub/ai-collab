@@ -111,7 +111,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             project = Project(title=title, description=description, id=project_id)
             asyncio.create_task(save_project(project))
             boss = await agent_manager.create_coworker(project_id)
-            await boss.initialize_project(project)
+            await boss.initialize_workspace(project)
             agents = agent_manager.list_agents(project_id)
             await ws_manager.broadcast(project_id, {"type": "status", "agents": agents})
             await ws.send_text(json.dumps({
