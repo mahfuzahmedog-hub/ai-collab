@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     openrouter_default_model: str = "gryphe/mythomax-l2-13b"
     omniroute_api_key: Optional[str] = None
     omniroute_base_url: str = "https://aye-significantly-mile-floppy.trycloudflare.com/v1"
-    omniroute_default_model: str = "mcode/mimo-auto"
+    omniroute_default_model: str = "oc/deepseek-v4-flash-free"
     ollama_base_url: str = "http://localhost:11434"
 
     max_agents_per_project: int = 50
