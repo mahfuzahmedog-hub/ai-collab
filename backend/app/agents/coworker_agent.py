@@ -19,6 +19,11 @@ from app.db.repository import save_agent, save_task, save_project, save_channel,
 
 logger = logging.getLogger(__name__)
 
+
+def _channel_slug(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-") or f"chan-{uuid.uuid4().hex[:8]}"
+
+
 COWORKER_SYSTEM_PROMPT = """# AIOS Coworker Agent — System Prompt
 
 ## Identity
@@ -432,6 +437,58 @@ You are successful when:
 * The user always feels like they are working alongside an intelligent, trustworthy coworker—not managing a confusing collection of bots."""
 
 
+ACTION_PROTOCOL = """
+
+---
+
+# Action Protocol (how you actually change the system)
+
+You do not just describe changes — you make them by emitting one or more [ACTION]...[/ACTION] blocks anywhere in your reply. Each block holds exactly one JSON object. Text outside the blocks is shown to the user as your chat message; the blocks are executed and hidden from the chat. Only emit an action when you truly intend to change the system.
+
+Available actions:
+
+Create an AI agent (the user will immediately see it in the sidebar and can chat with it directly).
+Optionally set "channel" to the slug of the channel the agent should post its work in (defaults to general):
+[ACTION]{"type":"create_agent","name":"Ada","role":"backend_engineer","skills":["python","fastapi"],"personality":"pragmatic and precise","display_name":"Ada","mission":"Own the backend APIs","channel":"backend"}[/ACTION]
+
+Create a channel or a collapsible category:
+[ACTION]{"type":"create_channel","name":"Backend","channel_type":"channel"}[/ACTION]
+Use "channel_type":"category" for a group header.
+
+Create a sub-channel nested under a parent. parent_id is the parent's slug — the lowercase, hyphenated form of the parent name (e.g. "Backend" -> "backend", "AI Models" -> "ai-models"). Channel ids are always this slug, so reference parents by their slug:
+[ACTION]{"type":"create_subchannel","name":"APIs","parent_id":"backend"}[/ACTION]
+
+Rename a channel (id is its slug):
+[ACTION]{"type":"rename_channel","id":"backend","name":"Backend Services"}[/ACTION]
+
+Move a channel under a new parent (omit parent_id to move it to the top level):
+[ACTION]{"type":"move_channel","id":"apis","parent_id":"backend"}[/ACTION]
+
+Delete a channel and all of its sub-channels (id is its slug):
+[ACTION]{"type":"delete_channel","id":"temporary-room"}[/ACTION]
+
+Create a thread on a message:
+[ACTION]{"type":"create_thread","channel":"general","parent_message_id":"msg-xxxx","title":"Design discussion"}[/ACTION]
+
+Create a knowledge base:
+[ACTION]{"type":"create_knowledge_base","name":"Product Specs"}[/ACTION]
+
+Remember a durable fact:
+[ACTION]{"type":"remember","key":"stack","value":"Next.js + FastAPI"}[/ACTION]
+
+Create and assign a task to an existing agent (assign_to is the agent's name):
+[ACTION]{"type":"create_task","title":"Build login API","description":"...","priority":"high","assign_to":"Ada"}[/ACTION]
+
+Retire an agent that is no longer needed (agent_id is the agent's id):
+[ACTION]{"type":"retire_agent","agent_id":"agent-xxxx"}[/ACTION]
+
+Rules:
+- When the user asks you to build a team, hire, or add a coworker/agent, you MUST emit create_agent action(s) — do not just say you will.
+- Create the minimum necessary. Never create duplicate agents.
+- Give each agent a clear, human name and a specific role so the user can find and DM them.
+- Always include a short plain-text message explaining what you created."""
+
+
 class CoworkerAgent(BaseAgent):
     def __init__(self, agent: Agent):
         super().__init__(agent)
@@ -441,7 +498,7 @@ class CoworkerAgent(BaseAgent):
         self._event_handlers = []
 
     def _system_prompt(self) -> str:
-        return COWORKER_SYSTEM_PROMPT
+        return COWORKER_SYSTEM_PROMPT + ACTION_PROTOCOL
 
     async def initialize_workspace(self, project: Project):
         self.project = project
@@ -452,7 +509,7 @@ class CoworkerAgent(BaseAgent):
     def _parse_actions(self, text: str) -> list[dict]:
         return super()._parse_actions(text)
 
-    async def _execute_action(self, action: dict):
+    async def _execute_action(self, action: dict, channel: str = "general"):
         t = action.get("type")
         if t == "create_agent":
             role_name = action.get("role", "backend_engineer")
@@ -461,29 +518,55 @@ class CoworkerAgent(BaseAgent):
                 "name": action.get("name"),
                 "skills": action.get("skills"),
                 "personality": action.get("personality"),
-            }])
+                "display_name": action.get("display_name"),
+                "mission": action.get("mission"),
+                "reporting_structure": action.get("reporting_structure"),
+                "channel": action.get("channel"),
+            }], announce_channel=channel)
         elif t == "create_channel":
+            name = action.get("name", "untitled")
             channel = Channel(
-                id=action.get("id", f"chan-{uuid.uuid4().hex[:8]}"),
+                id=action.get("id") or _channel_slug(name),
                 project_id=self.project.id,
-                name=action.get("name", "#untitled"),
-                parent_id=action.get("parent_id"),
-                type=action.get("type", "channel"),
+                name=name,
+                parent_id=_channel_slug(action["parent_id"]) if action.get("parent_id") else None,
+                type=action.get("channel_type", "channel"),
                 sort_order=action.get("sort_order", 0),
             )
             asyncio.create_task(save_channel(channel))
-            await event_bus.publish("channel_created", channel.model_dump())
+            await event_bus.publish("channel_created", {**channel.model_dump(), "channel_type": channel.type})
         elif t == "create_subchannel":
+            name = action.get("name", "untitled")
             channel = Channel(
-                id=action.get("id", f"sub-{uuid.uuid4().hex[:8]}"),
+                id=action.get("id") or _channel_slug(name),
                 project_id=self.project.id,
-                name=action.get("name", "#untitled"),
-                parent_id=action.get("parent_id"),
-                type=action.get("type", "channel"),
+                name=name,
+                parent_id=_channel_slug(action["parent_id"]) if action.get("parent_id") else None,
+                type=action.get("channel_type", "channel"),
                 sort_order=action.get("sort_order", 1),
             )
             asyncio.create_task(save_channel(channel))
-            await event_bus.publish("channel_created", channel.model_dump())
+            await event_bus.publish("channel_created", {**channel.model_dump(), "channel_type": channel.type})
+        elif t == "rename_channel":
+            from app.db.repository import rename_channel
+            cid = _channel_slug(action.get("id") or action.get("channel") or "")
+            new_name = action.get("name", "")
+            if cid and new_name and await rename_channel(self.project.id, cid, new_name):
+                await event_bus.publish("channel_renamed", {"project_id": self.project.id, "id": cid, "name": new_name})
+        elif t == "move_channel":
+            from app.db.repository import move_channel
+            cid = _channel_slug(action.get("id") or action.get("channel") or "")
+            parent = action.get("parent_id")
+            parent_id = _channel_slug(parent) if parent else None
+            if cid and await move_channel(self.project.id, cid, parent_id):
+                await event_bus.publish("channel_moved", {"project_id": self.project.id, "id": cid, "parent_id": parent_id})
+        elif t == "delete_channel":
+            from app.db.repository import delete_channel
+            cid = _channel_slug(action.get("id") or action.get("channel") or "")
+            if cid:
+                deleted = await delete_channel(self.project.id, cid)
+                if deleted:
+                    await event_bus.publish("channel_deleted", {"project_id": self.project.id, "ids": deleted})
         elif t == "create_thread":
             thread = Thread(
                 project_id=self.project.id,
@@ -507,7 +590,7 @@ class CoworkerAgent(BaseAgent):
         elif t == "create_knowledge_base":
             name = action.get("name", "default")
             asyncio.create_task(save_knowledge_base_entry(self.project.id, name, "_created", "true"))
-            await self.send_message(self.project.id, f"Knowledge base '{name}' created.", channel="general")
+            await self.send_message(self.project.id, f"Knowledge base '{name}' created.", channel=channel)
         elif t == "remember":
             key = action.get("key", "")
             value = action.get("value", "")
@@ -552,13 +635,13 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
         clean = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', response, flags=re.DOTALL).strip()
         await self.send_message(project_id, clean or response, channel=channel)
         for action in actions:
-            await self._execute_action(action)
+            await self._execute_action(action, channel)
 
-    async def create_team(self, required_roles: list[dict]):
+    async def create_team(self, required_roles: list[dict], announce_channel: str = "general"):
         if not self.project:
             return
 
-        await self.send_message(self.project.id, f"Building team for '{self.project.title}'...", msg_type="system", channel="general")
+        await self.send_message(self.project.id, f"Building team for '{self.project.title}'...", msg_type="system", channel=announce_channel)
 
         for role_info in required_roles:
             role = role_info.get("role", "backend")
@@ -571,21 +654,27 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
                 project_id=self.project.id,
                 skills=skills,
                 personality=role_info.get("personality", "professional and collaborative"),
+                display_name=role_info.get("display_name") or name,
+                mission=role_info.get("mission"),
+                reporting_structure=role_info.get("reporting_structure"),
+                channel=role_info.get("channel") or "general",
                 provider=settings.llm_default_provider,
             )
             worker = WorkerAgent(agent_model)
             self.team[agent_model.id] = worker
             self.project.agent_ids.append(agent_model.id)
             asyncio.create_task(save_agent(agent_model))
+            await event_bus.publish("agent_created", agent_model.model_dump())
 
-            await worker.send_message(self.project.id, f"Hello team! I'm {name}, your {role}. Ready to contribute!", channel="general")
+            greeting_channel = agent_model.channel or "general"
+            await worker.send_message(self.project.id, f"Hello team! I'm {name}, your {role}. Ready to contribute!", channel=greeting_channel)
             await asyncio.sleep(0.5)
 
         await self.send_message(
             self.project.id,
             f"Team created with {len(self.team)} members. Let's start working!",
             msg_type="system",
-            channel="general",
+            channel=announce_channel,
         )
 
     async def create_task(self, title: str, description: str = "", priority: TaskPriority = TaskPriority.medium, assigned_role: Optional[str] = None) -> Task:
@@ -609,6 +698,7 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
                         self.project.id,
                         f"📌 {worker.name}: I'm assigning you '{task.title}'.\n{description}",
                         mentions=[worker.name],
+                        channel=worker.agent.channel,
                     )
                     asyncio.create_task(worker.work_on_task())
                     break
@@ -628,6 +718,7 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
                 self.project.id,
                 f"➡️ {worker.name}: Taking over '{task.title}'.",
                 mentions=[worker.name],
+                channel=worker.agent.channel,
             )
 
     async def review_progress(self):
@@ -649,23 +740,37 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
                 msg_type="system",
             )
 
-    async def handle_task_completion(self, task_id: str):
+    async def handle_task_completion(self, task_id: str, channel: str = "general", worker_name: str = "The team"):
         task = self.tasks.get(task_id)
+        title = task.title if task else "the task"
         if task:
             task.status = TaskStatus.review
-            await self.send_message(
-                self.project.id,
-                f"✅ Task '{task.title}' completed. Requesting review.",
-                msg_type="system",
+        try:
+            review = await self.think(
+                f"{worker_name} just finished '{title}'. As their coworker, reply in the group in one or two natural English sentences: acknowledge the work and name the next step. No action blocks."
             )
+            clean = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', review, flags=re.DOTALL).strip()
+        except Exception:
+            clean = f"✅ Nice work on '{title}', {worker_name}. Let's move to review."
+        await self.send_message(self.project.id, clean or f"✅ '{title}' completed.", channel=channel)
 
     async def subscribe_events(self):
         async def on_message(data: dict):
             if data.get("project_id") != self.agent.project_id:
                 return
+            # ponytail: only the coworker subscribes to group messages; workers are
+            # driven by task assignment, which keeps agent chatter bounded (no
+            # worker<->worker reply loops). Upgrade path: give workers their own
+            # mention-scoped subscription with de-dup if free agent-to-agent chat is needed.
+            if data.get("sender_id") == self.id:
+                return
             msg_type = data.get("msg_type", "chat")
             if msg_type == "task_complete":
-                await self.handle_task_completion(data.get("metadata", {}).get("task_id", ""))
+                await self.handle_task_completion(
+                    data.get("metadata", {}).get("task_id", ""),
+                    channel=data.get("channel", "general"),
+                    worker_name=data.get("sender_name", "The team"),
+                )
 
         event_bus.subscribe("message", on_message)
         self._event_handlers.append(("message", on_message))

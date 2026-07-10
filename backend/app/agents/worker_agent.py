@@ -64,7 +64,7 @@ class WorkerAgent(BaseAgent):
             self.agent.project_id,
             f"Starting work on '{self.current_task.title}'...",
             msg_type="task_update",
-            channel="general",
+            channel=self.agent.channel,
         )
 
         # Inject recent group chat context
@@ -95,7 +95,7 @@ Please work on this task now. Think through the approach, implement the solution
                     self.agent.project_id,
                     feedback,
                     msg_type="file",
-                    channel="general",
+                    channel=self.agent.channel,
                 )
 
         # Strip action blocks from displayed response
@@ -113,7 +113,7 @@ Please work on this task now. Think through the approach, implement the solution
             self.agent.project_id,
             f"Completed task '{self.current_task.title}'.\n\n{clean_result[:300]}",
             msg_type="task_complete",
-            channel="general",
+            channel=self.agent.channel,
             metadata={"task_id": self.current_task.id},
         )
 
@@ -155,7 +155,7 @@ As a {self.agent.role} with skills in {', '.join(self.agent.skills)}, please pro
             self.agent.project_id,
             f"Blocked: {issue}\nI need help resolving this.",
             msg_type="task_update",
-            channel="general",
+            channel=self.agent.channel,
         )
         self.status = AgentStatus.blocked
 

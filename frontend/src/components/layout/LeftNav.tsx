@@ -23,37 +23,42 @@ export function LeftNav() {
   const coworker = agents.find((a) => a.role === "boss" || a.role === "coworker");
   const agentList = agents.filter((a) => a.role !== "boss" && a.role !== "coworker");
 
-  const categories = channels.filter((c) => c.type === "category");
-  const uncategorized = channels.filter((c) => !c.parent_id && c.type !== "category");
+  const ids = new Set(channels.map((c) => c.id));
+  const childrenOf = (parentId: string) =>
+    channels
+      .filter((c) => c.parent_id === parentId)
+      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const topLevel = channels.filter((c) => !c.parent_id || !ids.has(c.parent_id));
+  const categories = topLevel.filter((c) => c.type === "category");
+  const uncategorized = topLevel.filter((c) => c.type !== "category");
 
-  const renderChannel = (ch: Channel, depth: number = 0) => (
-    <li key={ch.id}>
-      <button
-        onClick={() => setActiveChannel(ch.id)}
-        className={`w-full px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 transition-colors ${
-          activeChannel === ch.id
-            ? "bg-primary-600/20 text-white"
-            : "text-dark-300 hover:bg-dark-700 hover:text-white"
-        }`}
-        style={{ paddingLeft: `${12 + depth * 16}px` }}
-      >
-        {ch.type === "category" ? (
-          <span className="text-dark-400 text-xs">#</span>
-        ) : (
+  const renderChannel = (ch: Channel, depth: number = 0) => {
+    const kids = childrenOf(ch.id);
+    return (
+      <li key={ch.id}>
+        <button
+          onClick={() => setActiveChannel(ch.id)}
+          className={`w-full px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 transition-colors ${
+            activeChannel === ch.id
+              ? "bg-primary-600/20 text-white"
+              : "text-dark-300 hover:bg-dark-700 hover:text-white"
+          }`}
+          style={{ paddingLeft: `${12 + depth * 16}px` }}
+        >
           <Hash className="w-3.5 h-3.5 flex-shrink-0 text-dark-400" />
+          <span className="truncate text-xs">{ch.name}</span>
+          {threads.some((t) => t.channel === ch.id) && (
+            <span className="ml-auto w-2 h-2 rounded-full bg-primary-500" title="Has active threads" />
+          )}
+        </button>
+        {kids.length > 0 && (
+          <ul className="space-y-0.5">
+            {kids.map((child) => renderChannel(child, depth + 1))}
+          </ul>
         )}
-        <span className="truncate text-xs">{ch.name}</span>
-        {threads.some((t) => t.channel === ch.id) && (
-          <span className="ml-auto w-2 h-2 rounded-full bg-primary-500" title="Has active threads" />
-        )}
-      </button>
-      {ch.children && ch.children.length > 0 && (
-        <ul className="space-y-0.5">
-          {ch.children.map((child) => renderChannel(child, depth + 1))}
-        </ul>
-      )}
-    </li>
-  );
+      </li>
+    );
+  };
 
   return (
     <aside className="w-56 flex-shrink-0 bg-dark-900 border-r border-dark-700 flex flex-col h-full">
@@ -93,9 +98,24 @@ export function LeftNav() {
         )}
 
         <ul className="space-y-0.5 mb-4">
+          {!channels.some((c) => c.id === "general") && (
+            <li>
+              <button
+                onClick={() => setActiveChannel("general")}
+                className={`w-full px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 transition-colors ${
+                  activeChannel === "general"
+                    ? "bg-primary-600/20 text-white"
+                    : "text-dark-300 hover:bg-dark-700 hover:text-white"
+                }`}
+              >
+                <Hash className="w-3.5 h-3.5 flex-shrink-0 text-dark-400" />
+                <span className="truncate text-xs">general</span>
+              </button>
+            </li>
+          )}
           {categories.map((cat) => {
             const isCollapsed = collapsedCategories[cat.id];
-            const children = channels.filter((c) => c.parent_id === cat.id);
+            const children = childrenOf(cat.id);
             return (
               <li key={cat.id}>
                 <button

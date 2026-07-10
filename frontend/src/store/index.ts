@@ -41,6 +41,8 @@ interface AppState {
   setProject: (p: Project) => void;
   setChannels: (c: Channel[]) => void;
   addChannel: (c: Channel) => void;
+  updateChannel: (id: string, data: Partial<Channel>) => void;
+  removeChannels: (ids: string[]) => void;
   setActiveChannel: (id: string) => void;
   setChannelsTree: (channels: Channel[]) => void;
   toggleCategory: (categoryId: string) => void;
@@ -61,6 +63,19 @@ interface AppState {
   setConnected: (c: boolean) => void;
   setActiveTab: (t: string) => void;
   clearProjectData: () => void;
+}
+
+function flattenChannels(nodes: Channel[]): Channel[] {
+  const out: Channel[] = [];
+  const walk = (list: Channel[]) => {
+    for (const n of list) {
+      const { children, ...rest } = n as Channel & { children?: Channel[] };
+      out.push(rest as Channel);
+      if (children && children.length) walk(children);
+    }
+  };
+  walk(nodes || []);
+  return out;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -84,9 +99,21 @@ export const useStore = create<AppState>((set) => ({
   setActiveProjectId: (id) => set({ activeProjectId: id }),
   setProject: (p) => set({ project: p }),
   setChannels: (c) => set({ channels: c }),
-  addChannel: (c) => set((s) => ({ channels: [...s.channels, c] })),
+  addChannel: (c) =>
+    set((s) => (s.channels.some((x) => x.id === c.id) ? {} : { channels: [...s.channels, c] })),
+  updateChannel: (id, data) =>
+    set((s) => ({ channels: s.channels.map((c) => (c.id === id ? { ...c, ...data } : c)) })),
+  removeChannels: (ids) =>
+    set((s) => {
+      const gone = new Set(ids);
+      return {
+        channels: s.channels.filter((c) => !gone.has(c.id)),
+        activeChannel: gone.has(s.activeChannel) ? "general" : s.activeChannel,
+        activeThread: null,
+      };
+    }),
   setActiveChannel: (id) => set({ activeChannel: id }),
-  setChannelsTree: (c) => set({ channels: c }),
+  setChannelsTree: (c) => set({ channels: flattenChannels(c) }),
   toggleCategory: (categoryId) =>
     set((s) => ({
       collapsedCategories: {

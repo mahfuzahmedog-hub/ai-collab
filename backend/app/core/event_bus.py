@@ -25,7 +25,7 @@ class EventBus:
         for cb in self._subscribers.get(event_type, []):
             tasks.append(asyncio.create_task(cb(data)))
         for cb in self._subscribers.get("*", []):
-            tasks.append(asyncio.create_task(cb({"type": event_type, **data})))
+            tasks.append(asyncio.create_task(cb({**data, "type": event_type})))
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 

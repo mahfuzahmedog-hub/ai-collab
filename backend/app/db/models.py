@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Text, DateTime, JSON, Enum, Float, ForeignKey, Integer
+from sqlalchemy import Column, String, Text, DateTime, JSON, Enum, Float, ForeignKey, Integer, Boolean
 from sqlalchemy.orm import relationship
 from app.db.session import Base
 
@@ -31,7 +31,8 @@ class AgentModel(Base):
     mission = Column(String(1000), nullable=True)
     reporting_structure = Column(String(500), nullable=True)
     version = Column(String(50), default="1.0")
-    is_permanent = Column(default=False)  # Boolean
+    is_permanent = Column(Boolean, default=False)
+    channel = Column(String(255), default="general")
 
 
 class ProjectModel(Base):

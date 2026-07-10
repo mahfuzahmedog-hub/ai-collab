@@ -174,11 +174,11 @@ function handleMessage(data: any) {
 
     case "channel_created":
       store.addChannel({
-        id: data.channel || data.id,
+        id: data.id || data.channel,
         name: data.name,
         project_id: data.project_id,
         parent_id: data.parent_id,
-        type: data.type || "channel",
+        type: data.channel_type || "channel",
         sort_order: data.sort_order || 0,
         unread: false,
       } as Channel);
@@ -186,6 +186,18 @@ function handleMessage(data: any) {
 
     case "channel_tree":
       if (data.channels) store.setChannelsTree(data.channels as Channel[]);
+      break;
+
+    case "channel_renamed":
+      store.updateChannel(data.id, { name: data.name });
+      break;
+
+    case "channel_moved":
+      store.updateChannel(data.id, { parent_id: data.parent_id ?? undefined });
+      break;
+
+    case "channel_deleted":
+      store.removeChannels((data.ids as string[]) || (data.id ? [data.id] : []));
       break;
 
     case "thread_created":

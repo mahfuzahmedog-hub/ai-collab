@@ -34,6 +34,7 @@ async def save_agent(agent: Agent):
             "reporting_structure": agent.reporting_structure,
             "version": agent.version,
             "is_permanent": agent.is_permanent,
+            "channel": agent.channel,
             "status": agent.status.value if hasattr(agent.status, "value") else agent.status,
             "current_task_id": agent.current_task_id,
             "skills": agent.skills,
@@ -69,6 +70,7 @@ async def load_agent(agent_id: str) -> Optional[Agent]:
             reporting_structure=row.reporting_structure,
             version=row.version or "1.0",
             is_permanent=row.is_permanent or False,
+            channel=getattr(row, "channel", None) or "general",
             status=AgentStatus(row.status),
             current_task_id=row.current_task_id,
             skills=row.skills or [],
@@ -98,6 +100,7 @@ async def load_project_agents(project_id: str) -> list[Agent]:
                 reporting_structure=row.reporting_structure,
                 version=row.version or "1.0",
                 is_permanent=row.is_permanent or False,
+                channel=getattr(row, "channel", None) or "general",
                 status=AgentStatus(row.status),
                 current_task_id=row.current_task_id,
                 skills=row.skills or [],
@@ -353,6 +356,65 @@ async def delete_project_channels(project_id: str):
             delete(ChannelModel).where(ChannelModel.project_id == project_id)
         )
         await s.commit()
+
+
+async def rename_channel(project_id: str, channel_id: str, name: str) -> bool:
+    async with async_session() as s:
+        result = await s.execute(
+            select(ChannelModel).where(
+                ChannelModel.id == channel_id,
+                ChannelModel.project_id == project_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if not row:
+            return False
+        row.name = name
+        await s.commit()
+        return True
+
+
+async def move_channel(project_id: str, channel_id: str, parent_id: Optional[str]) -> bool:
+    async with async_session() as s:
+        result = await s.execute(
+            select(ChannelModel).where(
+                ChannelModel.id == channel_id,
+                ChannelModel.project_id == project_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if not row:
+            return False
+        row.parent_id = parent_id or None
+        await s.commit()
+        return True
+
+
+async def delete_channel(project_id: str, channel_id: str) -> list[str]:
+    """Delete a channel and all its descendants. Returns the list of deleted ids."""
+    async with async_session() as s:
+        result = await s.execute(
+            select(ChannelModel).where(ChannelModel.project_id == project_id)
+        )
+        rows = result.scalars().all()
+        children_map: dict[str, list[str]] = {}
+        for r in rows:
+            children_map.setdefault(r.parent_id, []).append(r.id)
+        to_delete: list[str] = []
+        stack = [channel_id]
+        while stack:
+            cid = stack.pop()
+            to_delete.append(cid)
+            stack.extend(children_map.get(cid, []))
+        if to_delete:
+            await s.execute(
+                delete(ChannelModel).where(
+                    ChannelModel.project_id == project_id,
+                    ChannelModel.id.in_(to_delete),
+                )
+            )
+            await s.commit()
+        return to_delete
 
 
 async def save_thread(thread: Thread) -> Thread:

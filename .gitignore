@@ -19,3 +19,4 @@ workspace/
 
 # ponytail agent config
 .ponytail/
+.vercel

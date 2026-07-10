@@ -29,6 +29,7 @@ class Agent(BaseModel):
     reporting_structure: str | None = None
     version: str = "1.0"
     is_permanent: bool = False
+    channel: str = "general"
     status: AgentStatus = AgentStatus.idle
     current_task_id: str | None = None
     skills: list[str] = Field(default_factory=list)

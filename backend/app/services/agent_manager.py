@@ -39,9 +39,11 @@ class AgentManager:
         """Load the coworker agent from DB and restore it in memory."""
         try:
             workers = await load_project_agents(project_id)
+            proj = await load_project(project_id)
             for a in workers:
                 if a.role in ("coworker", "boss"):
                     self.boss = CoworkerAgent(a)
+                    self.boss.project = proj
                     await self.boss.start()
                     for w in workers:
                         if w.id != a.id:
@@ -52,6 +54,9 @@ class AgentManager:
             if not self.boss:
                 logger.warning("No coworker found in DB for project %s — creating one", project_id)
                 self.boss = await self.create_coworker(project_id)
+            if self.boss and self.boss.project is None and proj is not None:
+                self.boss.project = proj
+            self.current_project_id = project_id
         except Exception as e:
             logger.warning("restore_boss failed: %s", e)
 

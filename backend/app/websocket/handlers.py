@@ -164,7 +164,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
         )
         from app.db.repository import save_channel
         asyncio.create_task(save_channel(ch))
-        await event_bus.publish("channel_created", ch.model_dump())
+        await event_bus.publish("channel_created", {**ch.model_dump(), "channel_type": ch.type})
 
     elif command == "create_thread":
         from app.models.thread import Thread
