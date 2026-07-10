@@ -78,7 +78,12 @@ async def list_files(project_id: str) -> list[dict[str, Any]]:
 
 async def get_file_tree(project_id: str) -> list[dict[str, Any]]:
     # Try DB first for persistence across restarts
-    db_entries = await load_file_entries(project_id)
+    try:
+        db_entries = await load_file_entries(project_id)
+    except Exception as e:
+        logger.warning("load_file_entries failed: %s", e)
+        db_entries = []
+
     if db_entries and len(db_entries) > 0:
         tree: dict[str, Any] = {"name": "", "path": "", "type": "directory", "children": {}, "modified": 0}
         for entry in db_entries:
@@ -114,7 +119,11 @@ async def get_file_tree(project_id: str) -> list[dict[str, Any]]:
         return root["children"] if root.get("children") else []
 
     # Fallback to filesystem scan
-    files = await list_files(project_id)
+    try:
+        files = await list_files(project_id)
+    except Exception as e:
+        logger.warning("list_files failed: %s", e)
+        files = []
     tree: dict[str, Any] = {"name": "", "path": "", "type": "directory", "children": {}, "modified": 0}
     for f in files:
         parts = Path(f["path"]).parts
@@ -148,5 +157,8 @@ async def get_file_tree(project_id: str) -> list[dict[str, Any]]:
     # Sync scanned files to DB for next time
     if files:
         for f in files:
-            await save_file_entry(project_id, f["path"].rstrip("/"), "", "directory" if f["is_dir"] else "file")
+            try:
+                await save_file_entry(project_id, f["path"].rstrip("/"), "", "directory" if f["is_dir"] else "file")
+            except Exception:
+                pass
     return root["children"] if root.get("children") else []

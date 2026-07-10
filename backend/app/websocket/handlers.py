@@ -159,12 +159,27 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
         }))
 
     elif command == "load_project":
-        # Load project history from DB
-        messages = await load_project_messages(project_id, limit=200)
-        agents = await load_project_agents(project_id)
-        proj = await load_project(project_id)
-        file_tree = await get_file_tree(project_id)
-        
+        try:
+            messages = await load_project_messages(project_id, limit=200)
+        except Exception as e:
+            logger.warning("load_project_messages failed: %s", e)
+            messages = []
+        try:
+            agents = await load_project_agents(project_id)
+        except Exception as e:
+            logger.warning("load_project_agents failed: %s", e)
+            agents = []
+        try:
+            proj = await load_project(project_id)
+        except Exception as e:
+            logger.warning("load_project failed: %s", e)
+            proj = None
+        try:
+            file_tree = await get_file_tree(project_id)
+        except Exception as e:
+            logger.warning("get_file_tree failed: %s", e)
+            file_tree = []
+
         await ws.send_text(json.dumps({
             "type": "message_history",
             "messages": [m.model_dump() for m in messages],
