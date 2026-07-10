@@ -45,6 +45,7 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                         "content": content,
                         "msg_type": "chat",
                         "channel": channel,
+                        "thread_id": data.get("thread_id", None),
                         "reply_to": None,
                         "mentions": [],
                         "attachments": [],
@@ -58,12 +59,14 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                         agent_name = channel[3:]
                         found = False
                         if agent_manager.boss:
-                            if agent_name.lower() == agent_manager.boss.name.lower():
+                            coworker_slug = agent_manager.boss.name.lower().replace(" ", "-")
+                            if agent_name.lower() == coworker_slug:
                                 await agent_manager.boss.handle_user_request(project_id, content, channel)
                                 found = True
                             else:
                                 for wid, worker in agent_manager.boss.team.items():
-                                    if agent_name.lower() == worker.name.lower().replace(" ", "-"):
+                                    worker_slug = worker.name.lower().replace(" ", "-")
+                                    if agent_name.lower() == worker_slug:
                                         await worker.handle_direct_message(project_id, content)
                                         found = True
                                         break
@@ -79,13 +82,13 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                                 "msg_type": "system",
                                 "channel": channel,
                             })
-                    elif agent_manager.boss and agent_manager.boss.agent.project_id == project_id:
+                    elif agent_manager.boss:
                         await agent_manager.boss.handle_user_request(project_id, content, channel)
 
                 elif msg_type == "command":
                     cmd = data.get("command", "")
                     args = data.get("args", {})
-                    await handle_command(project_id, cmd, args, websocket)
+                    await handle_command(project_id, cmd, args, websocket, user_id)
 
             except json.JSONDecodeError:
                 await websocket.send_text(json.dumps({"type": "error", "message": "Invalid JSON"}))
@@ -97,9 +100,8 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
         await ws_manager.disconnect(websocket, project_id)
 
 
-async def handle_command(project_id: str, command: str, args: dict, ws: WebSocket):
+async def handle_command(project_id: str, command: str, args: dict, ws: WebSocket, user_id: str = "user"):
     from app.models.project import Project
-    from app.models.agent import AgentRole
     from app.workspace.manager import get_file_tree
 
     if command == "create_project":
@@ -108,7 +110,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             description = args.get("description", "")
             project = Project(title=title, description=description, id=project_id)
             asyncio.create_task(save_project(project))
-            boss = await agent_manager.create_boss(project_id)
+            boss = await agent_manager.create_coworker(project_id)
             await boss.initialize_project(project)
             agents = agent_manager.list_agents(project_id)
             await ws_manager.broadcast(project_id, {"type": "status", "agents": agents})
@@ -137,19 +139,50 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             }))
 
     elif command == "add_agent":
-        role_name = args.get("role", "backend_engineer")
+        role_name = args.get("role", "engineer")
         name = args.get("name", f"Agent-{len(agent_manager.workers) + 1}")
-        try:
-            role = AgentRole(role_name)
-            worker = await agent_manager.create_worker(project_id, name, role)
-            await ws.send_text(json.dumps({
-                "type": "agent_added",
-                "agent_id": worker.id,
-                "name": worker.name,
-                "role": role.value,
-            }))
-        except ValueError:
-            await ws.send_text(json.dumps({"type": "error", "message": f"Invalid role: {role_name}"}))
+        worker = await agent_manager.create_worker(project_id, name, role_name)
+        await ws.send_text(json.dumps({
+            "type": "agent_added",
+            "agent_id": worker.id,
+            "name": worker.name,
+            "role": role_name,
+        }))
+
+    elif command == "create_channel":
+        from app.models.channel import Channel
+        channel_id = args.get("id", args.get("name", "").lower().replace(" ", "-"))
+        channel_name = args.get("name", channel_id)
+        parent_id = args.get("parent_id")
+        ch_type = args.get("type", "channel")
+        ch = Channel(
+            id=channel_id,
+            project_id=project_id,
+            name=f"#{channel_name}",
+            parent_id=parent_id,
+            type=ch_type,
+        )
+        from app.db.repository import save_channel
+        asyncio.create_task(save_channel(ch))
+        await event_bus.publish("channel_created", ch.model_dump())
+
+    elif command == "create_thread":
+        from app.models.thread import Thread
+        parent_msg_id = args.get("parent_message_id", "")
+        title = args.get("title", "Thread")
+        channel_name = args.get("channel", "general")
+        thread_id = f"thread-{uuid4().hex[:8]}"
+        thread = Thread(
+            id=thread_id,
+            project_id=project_id,
+            channel=channel_name,
+            parent_message_id=parent_msg_id,
+            title=title,
+            created_by=user_id,
+        )
+        from app.db.repository import save_thread
+        asyncio.create_task(save_thread(thread))
+        await event_bus.publish("thread_created", thread.model_dump())
 
     elif command == "status":
         agents = agent_manager.list_agents(project_id)
@@ -180,6 +213,13 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             logger.warning("get_file_tree failed: %s", e)
             file_tree = []
 
+        # Restore the CoworkerAgent in memory so messages get responses
+        try:
+            await agent_manager.restore_boss(project_id)
+            await agent_manager.restore_workspace(project_id)
+        except Exception as e:
+            logger.warning("restore failed: %s", e)
+
         await ws.send_text(json.dumps({
             "type": "message_history",
             "messages": [m.model_dump() for m in messages],
@@ -196,6 +236,20 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             "type": "file_tree",
             "files": file_tree,
         }))
+        try:
+            from app.db.repository import load_project_channels_tree, load_project_threads
+            channel_tree = await load_project_channels_tree(project_id)
+            await ws.send_text(json.dumps({
+                "type": "channel_tree",
+                "channels": channel_tree,
+            }))
+            threads = await load_project_threads(project_id)
+            await ws.send_text(json.dumps({
+                "type": "thread_list",
+                "threads": [t.model_dump() for t in threads],
+            }))
+        except Exception as e:
+            logger.warning("load channels/threads failed: %s", e)
 
     elif command == "switch_project":
         new_project_id = args.get("project_id", "")

@@ -6,12 +6,14 @@ from typing import Optional
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AgentModel, MessageModel, TaskModel, ProjectModel, FileModel
+from app.db.models import AgentModel, MessageModel, TaskModel, ProjectModel, FileModel, ChannelModel, ThreadModel, KnowledgeBaseModel
 from app.db.session import async_session
-from app.models.agent import Agent, AgentStatus, AgentRole
+from app.models.agent import Agent, AgentStatus
 from app.models.task import Task, TaskStatus, TaskPriority
 from app.models.message import Message
 from app.models.project import Project
+from app.models.channel import Channel
+from app.models.thread import Thread
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +26,14 @@ async def save_agent(agent: Agent):
         now = datetime.utcnow()
         data = {
             "name": agent.name,
-            "role": agent.role.value if hasattr(agent.role, "value") else agent.role,
+            "role": agent.role,
             "project_id": agent.project_id,
             "personality": agent.personality,
+            "display_name": agent.display_name,
+            "mission": agent.mission,
+            "reporting_structure": agent.reporting_structure,
+            "version": agent.version,
+            "is_permanent": agent.is_permanent,
             "status": agent.status.value if hasattr(agent.status, "value") else agent.status,
             "current_task_id": agent.current_task_id,
             "skills": agent.skills,
@@ -54,9 +61,14 @@ async def load_agent(agent_id: str) -> Optional[Agent]:
         return Agent(
             id=row.id,
             name=row.name,
-            role=AgentRole(row.role),
+            role=row.role,
             project_id=row.project_id,
             personality=row.personality,
+            display_name=row.display_name,
+            mission=row.mission,
+            reporting_structure=row.reporting_structure,
+            version=row.version or "1.0",
+            is_permanent=row.is_permanent or False,
             status=AgentStatus(row.status),
             current_task_id=row.current_task_id,
             skills=row.skills or [],
@@ -78,9 +90,14 @@ async def load_project_agents(project_id: str) -> list[Agent]:
             agents.append(Agent(
                 id=row.id,
                 name=row.name,
-                role=AgentRole(row.role),
+                role=row.role,
                 project_id=row.project_id,
                 personality=row.personality,
+                display_name=row.display_name,
+                mission=row.mission,
+                reporting_structure=row.reporting_structure,
+                version=row.version or "1.0",
+                is_permanent=row.is_permanent or False,
                 status=AgentStatus(row.status),
                 current_task_id=row.current_task_id,
                 skills=row.skills or [],
@@ -104,6 +121,7 @@ async def save_message(msg: Message):
             content=msg.content,
             msg_type=msg.msg_type,
             channel=msg.channel,
+            thread_id=msg.thread_id,
             reply_to=msg.reply_to,
             mentions=msg.mentions,
             attachments=msg.attachments,
@@ -132,6 +150,7 @@ async def load_project_messages(project_id: str, limit: int = 200) -> list[Messa
                 content=row.content,
                 msg_type=row.msg_type,
                 channel=row.channel,
+                thread_id=row.thread_id,
                 reply_to=row.reply_to,
                 mentions=row.mentions or [],
                 attachments=row.attachments or [],
@@ -274,3 +293,120 @@ async def delete_file_entry(project_id: str, path: str):
         if row:
             await s.delete(row)
             await s.commit()
+
+
+async def save_channel(channel: Channel):
+    async with async_session() as s:
+        stmt = select(ChannelModel).where(
+            ChannelModel.id == channel.id,
+            ChannelModel.project_id == channel.project_id
+        )
+        result = await s.execute(stmt)
+        existing = result.scalar_one_or_none()
+        data = {
+            "parent_id": channel.parent_id,
+            "name": channel.name,
+            "type": channel.type,
+            "sort_order": channel.sort_order,
+        }
+        if existing:
+            for k, v in data.items():
+                setattr(existing, k, v)
+        else:
+            s.add(ChannelModel(id=channel.id, project_id=channel.project_id, **data))
+        await s.commit()
+
+
+async def load_project_channels(project_id: str) -> list[Channel]:
+    async with async_session() as s:
+        result = await s.execute(
+            select(ChannelModel)
+            .where(ChannelModel.project_id == project_id)
+            .order_by(ChannelModel.sort_order)
+        )
+        return [Channel(
+            id=row.id, project_id=row.project_id,
+            parent_id=row.parent_id, name=row.name,
+            type=row.type, sort_order=row.sort_order,
+        ) for row in result.scalars().all()]
+
+
+async def load_project_channels_tree(project_id: str) -> list[dict]:
+    channels = await load_project_channels(project_id)
+    by_id = {}
+    roots = []
+    for ch in channels:
+        node = ch.model_dump()
+        node["children"] = []
+        by_id[ch.id] = node
+    for ch_id, node in by_id.items():
+        if node["parent_id"] and node["parent_id"] in by_id:
+            by_id[node["parent_id"]]["children"].append(node)
+        else:
+            roots.append(node)
+    return roots
+
+
+async def delete_project_channels(project_id: str):
+    async with async_session() as s:
+        await s.execute(
+            delete(ChannelModel).where(ChannelModel.project_id == project_id)
+        )
+        await s.commit()
+
+
+async def save_thread(thread: Thread) -> Thread:
+    async with async_session() as s:
+        s.add(ThreadModel(
+            id=thread.id, project_id=thread.project_id,
+            channel=thread.channel, parent_message_id=thread.parent_message_id,
+            title=thread.title, created_by=thread.created_by,
+        ))
+        await s.commit()
+    return thread
+
+
+async def load_project_threads(project_id: str) -> list[Thread]:
+    async with async_session() as s:
+        result = await s.execute(
+            select(ThreadModel)
+            .where(ThreadModel.project_id == project_id)
+            .order_by(ThreadModel.created_at.desc())
+        )
+        return [Thread(
+            id=row.id, project_id=row.project_id,
+            channel=row.channel, parent_message_id=row.parent_message_id,
+            title=row.title, created_by=row.created_by,
+            created_at=row.created_at.isoformat() + "Z" if row.created_at else "",
+        ) for row in result.scalars().all()]
+
+
+async def save_knowledge_base_entry(project_id: str, name: str, key: str, value: str):
+    async with async_session() as s:
+        stmt = select(KnowledgeBaseModel).where(
+            KnowledgeBaseModel.project_id == project_id,
+            KnowledgeBaseModel.name == name
+        )
+        result = await s.execute(stmt)
+        existing = result.scalar_one_or_none()
+        if existing:
+            entries = existing.entries or {}
+            entries[key] = value
+            existing.entries = entries
+        else:
+            s.add(KnowledgeBaseModel(
+                project_id=project_id, name=name,
+                entries={key: value}
+            ))
+        await s.commit()
+
+
+async def load_knowledge_base(project_id: str, name: str) -> dict:
+    async with async_session() as s:
+        stmt = select(KnowledgeBaseModel).where(
+            KnowledgeBaseModel.project_id == project_id,
+            KnowledgeBaseModel.name == name
+        )
+        result = await s.execute(stmt)
+        row = result.scalar_one_or_none()
+        return row.entries if row else {}

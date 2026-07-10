@@ -1,6 +1,10 @@
 export interface Agent {
   id: string;
   name: string;
+  display_name?: string;
+  mission?: string;
+  version?: string;
+  is_permanent?: boolean;
   role: string;
   personality: string;
   status: AgentStatus;
@@ -64,6 +68,7 @@ export interface Message {
   content: string;
   msg_type: "chat" | "task_update" | "review" | "system" | "file";
   channel: string;
+  thread_id?: string | null;
   reply_to: string | null;
   mentions: string[];
   attachments: any[];
@@ -75,7 +80,22 @@ export interface Channel {
   id: string;
   name: string;
   project_id: string;
+  parent_id?: string;
+  type?: "category" | "channel";
+  sort_order?: number;
+  children?: Channel[];
   unread: boolean;
+}
+
+export interface Thread {
+  id: string;
+  project_id: string;
+  channel: string;
+  parent_message_id: string;
+  title: string;
+  created_by: string;
+  created_at: string;
+  messages?: Message[];
 }
 
 export interface FileNode {

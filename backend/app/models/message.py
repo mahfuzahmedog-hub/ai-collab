@@ -17,6 +17,7 @@ class Message(BaseModel):
     content: str
     msg_type: str = "chat"  # chat, task_update, review, system, file
     channel: str = "general"
+    thread_id: Optional[str] = None
     reply_to: Optional[str] = None
     mentions: list[str] = Field(default_factory=list)
     attachments: list[dict] = Field(default_factory=list)

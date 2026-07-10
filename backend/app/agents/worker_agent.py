@@ -146,7 +146,7 @@ Provide a thorough review."""
 
 {question}
 
-As a {self.agent.role.value} with skills in {', '.join(self.agent.skills)}, please provide helpful assistance."""
+As a {self.agent.role} with skills in {', '.join(self.agent.skills)}, please provide helpful assistance."""
 
         return await self.think(prompt)
 
@@ -163,7 +163,7 @@ As a {self.agent.role.value} with skills in {', '.join(self.agent.skills)}, plea
         prompt = f"""The user has sent you a direct message:
 {user_message}
 
-You are {self.name}, a {self.agent.role.value.replace('_', ' ')} with skills in {', '.join(self.agent.skills)}.
+You are {self.name}, a {self.agent.role} with skills in {', '.join(self.agent.skills)}.
 Respond helpfully and professionally. You can offer to take on tasks, answer questions, or provide information."""
         response = await self.think(prompt)
         clean = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', response, flags=re.DOTALL).strip()

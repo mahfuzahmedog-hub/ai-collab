@@ -27,6 +27,11 @@ class AgentModel(Base):
     chat_history = Column(JSON, default=list)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_active = Column(DateTime, default=datetime.utcnow)
+    display_name = Column(String(255), nullable=True)
+    mission = Column(String(1000), nullable=True)
+    reporting_structure = Column(String(500), nullable=True)
+    version = Column(String(50), default="1.0")
+    is_permanent = Column(default=False)  # Boolean
 
 
 class ProjectModel(Base):
@@ -102,3 +107,35 @@ class FileModel(Base):
     file_type = Column(String, default="file")  # "file" or "directory"
     size = Column(Integer, default=0)
     modified = Column(DateTime, default=datetime.utcnow)
+
+
+class ChannelModel(Base):
+    __tablename__ = "project_channels"
+    id = Column(String, primary_key=True)
+    project_id = Column(String, primary_key=True)  # composite PK with id
+    parent_id = Column(String, nullable=True)
+    name = Column(String(255), nullable=False)
+    type = Column(String(50), default="channel")  # "category" or "channel"
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ThreadModel(Base):
+    __tablename__ = "project_threads"
+    id = Column(String, primary_key=True, default=gen_id)
+    project_id = Column(String, nullable=False, index=True)
+    channel = Column(String(50), nullable=False)
+    parent_message_id = Column(String, nullable=False)
+    title = Column(String(255), default="")
+    created_by = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class KnowledgeBaseModel(Base):
+    __tablename__ = "knowledge_bases"
+    id = Column(String, primary_key=True, default=gen_id)
+    project_id = Column(String, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    entries = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -2,6 +2,7 @@
 
 import { formatDistanceToNow } from "date-fns";
 import { Bot, FileText, Terminal, AlertCircle, CheckCircle } from "lucide-react";
+import { sendCreateThread } from "@/lib/websocket";
 
 interface EventCardProps {
   msg: {
@@ -13,6 +14,7 @@ interface EventCardProps {
     content: string;
     msg_type: string;
     channel: string;
+    thread_id?: string | null;
     reply_to: string | null;
     mentions: string[];
     attachments: any[];
@@ -112,6 +114,14 @@ export function EventCard({ msg, isLast, agents, isStreaming }: EventCardProps) 
           )}
         </div>
         <div className="text-sm text-dark-100 whitespace-pre-wrap">{msg.content}</div>
+        {!msg.thread_id && (
+          <button
+            onClick={() => sendCreateThread(msg.id, `Thread on ${msg.sender_name}'s message`, msg.channel)}
+            className="mt-1 text-xs text-dark-400 hover:text-primary-400 transition-colors"
+          >
+            Reply in thread
+          </button>
+        )}
       </div>
     </div>
   );

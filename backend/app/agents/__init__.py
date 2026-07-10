@@ -1,5 +1,5 @@
 from .base_agent import BaseAgent
-from .boss_agent import BossAgent
+from .coworker_agent import CoworkerAgent
 from .worker_agent import WorkerAgent
 
-__all__ = ["BaseAgent", "BossAgent", "WorkerAgent"]
+__all__ = ["BaseAgent", "CoworkerAgent", "WorkerAgent"]

@@ -1,4 +1,4 @@
-import type { Agent, Task, Message, Project, Channel, FileNode } from "@/types";
+import type { Agent, Task, Message, Project, Channel, FileNode, Thread } from "@/types";
 import { useStore } from "@/store";
 
 let ws: WebSocket | null = null;
@@ -102,14 +102,28 @@ export function sendCommand(command: string, args: Record<string, any> = {}) {
   send({ type: "command", command, args });
 }
 
+export function sendCreateChannel(name: string, parentId?: string, type: string = "channel") {
+  const id = name.toLowerCase().replace(/[^a-z0-9]/g, "-");
+  sendCommand("create_channel", { id, name, parent_id: parentId, type });
+}
+
+export function sendCreateThread(parentMessageId: string, title: string, channel: string) {
+  sendCommand("create_thread", { parent_message_id: parentMessageId, title, channel });
+}
+
 function handleMessage(data: any) {
   const store = useStore.getState();
 
   switch (data.type) {
     case "message":
-      // Only add if it matches the active channel or is general
       const activeChannel = store.activeChannel;
-      if (data.channel === activeChannel || data.channel === "general") {
+      const activeThread = store.activeThread;
+      // If this message belongs to the active thread, add it
+      if (data.thread_id && data.thread_id === activeThread) {
+        store.addMessage(data as Message);
+      }
+      // If this message is in the active channel and not a thread reply, add it
+      else if (!data.thread_id && data.channel === activeChannel) {
         store.addMessage(data as Message);
       }
       break;
@@ -160,11 +174,30 @@ function handleMessage(data: any) {
 
     case "channel_created":
       store.addChannel({
-        id: data.channel,
+        id: data.channel || data.id,
         name: data.name,
         project_id: data.project_id,
+        parent_id: data.parent_id,
+        type: data.type || "channel",
+        sort_order: data.sort_order || 0,
         unread: false,
       } as Channel);
+      break;
+
+    case "channel_tree":
+      if (data.channels) store.setChannelsTree(data.channels as Channel[]);
+      break;
+
+    case "thread_created":
+      store.addThread(data as unknown as Thread);
+      break;
+
+    case "thread_list":
+      if (data.threads) store.setThreads(data.threads as Thread[]);
+      break;
+
+    case "agent_retired":
+      store.removeAgent(data.agent_id);
       break;
 
     case "project_switched":

@@ -1,9 +1,9 @@
 import asyncio
 import logging
 from typing import Optional
-from app.models.agent import Agent, AgentRole, AgentStatus
+from app.models.agent import Agent, AgentStatus
 from app.core.config import settings
-from app.agents.boss_agent import BossAgent
+from app.agents.coworker_agent import CoworkerAgent
 from app.agents.worker_agent import WorkerAgent
 from app.core.event_bus import event_bus
 from app.db.repository import save_agent, load_project_agents, load_project_messages, load_project
@@ -13,27 +13,57 @@ logger = logging.getLogger(__name__)
 
 class AgentManager:
     def __init__(self):
-        self.boss: Optional[BossAgent] = None
+        self.boss: Optional[CoworkerAgent] = None
         self.workers: dict[str, WorkerAgent] = {}
         self.current_project_id: Optional[str] = None
 
-    async def create_boss(self, project_id: str, name: str = "Boss") -> BossAgent:
+    async def create_coworker(self, project_id: str, name: str = "Coworker") -> CoworkerAgent:
         agent = Agent(
             name=name,
-            role=AgentRole.boss,
+            role="coworker",
             project_id=project_id,
-            skills=["management", "planning", "coordination", "leadership"],
-            personality="experienced engineering manager, decisive and clear communicator",
+            skills=["management", "planning", "coordination", "leadership", "organization"],
+            personality="user's AI coworker, proactive and thoughtful partner",
             provider=settings.llm_default_provider,
             model=settings.llm_default_model,
         )
-        self.boss = BossAgent(agent)
+        self.boss = CoworkerAgent(agent)
         await self.boss.start()
         await event_bus.publish("agent_created", agent.model_dump())
         asyncio.create_task(save_agent(agent))
         asyncio.create_task(self._restore_project(project_id))
         self.current_project_id = project_id
         return self.boss
+
+    async def restore_boss(self, project_id: str):
+        """Load the coworker agent from DB and restore it in memory."""
+        try:
+            workers = await load_project_agents(project_id)
+            for a in workers:
+                if a.role in ("coworker", "boss"):
+                    self.boss = CoworkerAgent(a)
+                    await self.boss.start()
+                    for w in workers:
+                        if w.id != a.id:
+                            worker = WorkerAgent(w)
+                            self.boss.team[w.id] = worker
+                    logger.info("Restored coworker + %d workers for project %s", len(self.boss.team), project_id)
+                    break
+            if not self.boss:
+                logger.warning("No coworker found in DB for project %s — creating one", project_id)
+                self.boss = await self.create_coworker(project_id)
+        except Exception as e:
+            logger.warning("restore_boss failed: %s", e)
+
+    async def restore_workspace(self, project_id: str):
+        """Restore channels, threads, KB and publish them to the frontend."""
+        try:
+            from app.db.repository import load_project_channels, load_project_threads, load_knowledge_base
+            channels = await load_project_channels(project_id)
+            for ch in channels:
+                await event_bus.publish("channel_created", ch.model_dump())
+        except Exception as e:
+            logger.warning("restore_workspace channels failed: %s", e)
 
     async def switch_project(self, project_id: str):
         # Save current project state
@@ -57,13 +87,11 @@ class AgentManager:
         try:
             workers = await load_project_agents(project_id)
             for a in workers:
-                if a.role == AgentRole.boss:
+                if a.role in ("coworker", "boss"):
                     if self.boss:
                         self.boss.agent.chat_history = a.chat_history
                         self.boss.agent.memory = a.memory
-                elif a.id not in self.workers:
-                    w = WorkerAgent(a)
-                    self.workers[a.id] = w
+                    break
 
             msgs = await load_project_messages(project_id)
             if self.boss:
@@ -72,16 +100,16 @@ class AgentManager:
                         self.boss.agent.chat_history.append(
                             {"role": "user" if m.sender_role == "user" else "assistant", "content": m.content}
                         )
-            logger.info("Restored %d workers, %d messages for project %s", len(workers), len(msgs), project_id)
+            logger.info("Restored messages for project %s", len(msgs), project_id)
         except Exception as e:
             logger.warning("Project restore skipped: %s", e)
 
-    async def create_worker(self, project_id: str, name: str, role: AgentRole, skills: Optional[list[str]] = None) -> WorkerAgent:
+    async def create_worker(self, project_id: str, name: str, role: str, skills: Optional[list[str]] = None) -> WorkerAgent:
         agent = Agent(
             name=name,
             role=role,
             project_id=project_id,
-            skills=skills or [role.value],
+            skills=skills or [role],
             provider=settings.llm_default_provider,
             model=settings.llm_default_model,
         )

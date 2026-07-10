@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/store";
-import { sendChat, sendCommand } from "@/lib/websocket";
+import { sendChat } from "@/lib/websocket";
 import { EventCard } from "./EventCard";
+import { ThreadView } from "./ThreadView";
 import { Send, Loader2 } from "lucide-react";
 
 export function Timeline() {
@@ -11,16 +12,25 @@ export function Timeline() {
   const agents = useStore((s) => s.agents);
   const activeChannel = useStore((s) => s.activeChannel);
   const streamingChunk = useStore((s) => s.streamingChunk);
+  const activeThread = useStore((s) => s.activeThread);
+  const threads = useStore((s) => s.threads);
   const [input, setInput] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
 
-  // Filter messages by active channel
-  const channelMessages = messages.filter((m) => m.channel === activeChannel);
+  // Filter messages by active channel, excluding thread replies
+  const channelMessages = messages.filter(
+    (m) => m.channel === activeChannel && !m.thread_id
+  );
+
+  // Get thread messages for active thread
+  const threadMessages = activeThread
+    ? messages.filter((m) => m.thread_id === activeThread)
+    : [];
 
   // Auto-scroll
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [channelMessages, streamingChunk]);
+  }, [channelMessages, streamingChunk, threadMessages]);
 
   const handleSend = () => {
     if (!input.trim()) return;
@@ -42,7 +52,7 @@ export function Timeline() {
       {/* Channel header */}
       <div className="px-4 py-3 border-b border-dark-700 bg-dark-900">
         <div className="flex items-center gap-3">
-          <span className="text-primary-400 font-mono text-sm">#{activeChannel}</span>
+          <span className="text-primary-400 font-mono text-sm">{activeChannel.startsWith("#") ? activeChannel : `#${activeChannel}`}</span>
           <span className="text-dark-500 text-sm">|</span>
           <span className="text-dark-400 text-sm">
             {channelMessages.length} message{channelMessages.length !== 1 ? "s" : ""}
@@ -50,45 +60,52 @@ export function Timeline() {
         </div>
       </div>
 
-      {/* Message list */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {channelMessages.length === 0 && !streamingChunk && (
-          <div className="flex flex-col items-center justify-center h-full text-dark-500">
-            <div className="text-lg mb-2">No messages yet</div>
-            <div className="text-sm">Start by sending a message or creating a project</div>
-          </div>
-        )}
-        {channelMessages.map((msg, idx) => (
-          <EventCard
-            key={msg.id}
-            msg={msg}
-            isLast={idx === channelMessages.length - 1}
-            agents={agents}
-          />
-        ))}
-        {streamingChunk && !streamingChunk.done && (
-          <EventCard
-            msg={{
-              id: `streaming-${streamingChunk.agentId}`,
-              project_id: "",
-              sender_id: streamingChunk.agentId,
-              sender_name: agents.find((a) => a.id === streamingChunk.agentId)?.name || "Agent",
-              sender_role: agents.find((a) => a.id === streamingChunk.agentId)?.role || "agent",
-              content: streamingChunk.content + "▌",
-              msg_type: "chat",
-              channel: activeChannel,
-              reply_to: null,
-              mentions: [],
-              attachments: [],
-              metadata: {},
-              timestamp: new Date().toISOString(),
-            }}
-            isLast={true}
-            agents={agents}
-            isStreaming={true}
-          />
-        )}
-        <div ref={endRef} />
+      {/* Body: message list + thread panel side-by-side */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Message list */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {channelMessages.length === 0 && !streamingChunk && (
+            <div className="flex flex-col items-center justify-center h-full text-dark-500">
+              <div className="text-lg mb-2">No messages yet</div>
+              <div className="text-sm">Start by sending a message or creating a project</div>
+            </div>
+          )}
+          {channelMessages.map((msg, idx) => (
+            <EventCard
+              key={msg.id}
+              msg={msg}
+              isLast={idx === channelMessages.length - 1}
+              agents={agents}
+            />
+          ))}
+          {streamingChunk && !streamingChunk.done && (
+            <EventCard
+              msg={{
+                id: `streaming-${streamingChunk.agentId}`,
+                project_id: "",
+                sender_id: streamingChunk.agentId,
+                sender_name: agents.find((a) => a.id === streamingChunk.agentId)?.name || "Agent",
+                sender_role: agents.find((a) => a.id === streamingChunk.agentId)?.role || "agent",
+                content: streamingChunk.content + "▌",
+                msg_type: "chat",
+                channel: activeChannel,
+                thread_id: null,
+                reply_to: null,
+                mentions: [],
+                attachments: [],
+                metadata: {},
+                timestamp: new Date().toISOString(),
+              }}
+              isLast={true}
+              agents={agents}
+              isStreaming={true}
+            />
+          )}
+          <div ref={endRef} />
+        </div>
+
+        {/* Thread panel */}
+        <ThreadView />
       </div>
 
       {/* Input bar */}

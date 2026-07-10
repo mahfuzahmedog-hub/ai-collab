@@ -19,36 +19,16 @@ class AgentStatus(str, enum.Enum):
     done = "done"
 
 
-class AgentRole(str, enum.Enum):
-    boss = "boss"
-    planner = "planner"
-    researcher = "researcher"
-    architect = "architect"
-    backend = "backend_engineer"
-    frontend = "frontend_engineer"
-    mobile = "mobile_developer"
-    ui_designer = "ui_designer"
-    ux_designer = "ux_designer"
-    devops = "devops"
-    infrastructure = "infrastructure_engineer"
-    security = "security_engineer"
-    database = "database_engineer"
-    api = "api_engineer"
-    ai_engineer = "ai_engineer"
-    documentation = "documentation_writer"
-    qa = "qa_engineer"
-    reviewer = "reviewer"
-    debugger = "debugger"
-    performance = "performance_engineer"
-    integration = "integration_engineer"
-    deployment = "deployment_engineer"
-
-
 class Agent(BaseModel):
     id: str = Field(default_factory=lambda: f"agent-{uuid.uuid4().hex[:8]}")
     name: str
-    role: AgentRole
+    role: str
     personality: str = "professional and helpful"
+    display_name: str | None = None
+    mission: str | None = None
+    reporting_structure: str | None = None
+    version: str = "1.0"
+    is_permanent: bool = False
     status: AgentStatus = AgentStatus.idle
     current_task_id: str | None = None
     skills: list[str] = Field(default_factory=list)
@@ -66,5 +46,4 @@ class Agent(BaseModel):
     model: str = "gpt-4o-mini"
     temperature: float = 0.7
 
-    class Config:
-        use_enum_values = True
+

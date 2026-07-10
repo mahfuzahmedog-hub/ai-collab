@@ -35,6 +35,14 @@ class BaseAgent:
         return self.agent.role
 
     @property
+    def display_name(self) -> str:
+        return self.agent.display_name or self.agent.name
+
+    @property
+    def mission(self) -> str:
+        return self.agent.mission or ""
+
+    @property
     def status(self) -> AgentStatus:
         return self.agent.status
 
@@ -144,16 +152,17 @@ class BaseAgent:
             })
         self.status = AgentStatus.idle
 
-    async def send_message(self, project_id: str, content: str, msg_type: str = "chat", mentions: Optional[list[str]] = None, channel: str = "general"):
+    async def send_message(self, project_id: str, content: str, msg_type: str = "chat", mentions: Optional[list[str]] = None, channel: str = "general", thread_id: Optional[str] = None):
         msg = Message(
             project_id=project_id,
             sender_id=self.id,
             sender_name=self.name,
-            sender_role=self.agent.role.value if hasattr(self.agent.role, 'value') else str(self.agent.role),
+            sender_role=str(self.agent.role),
             content=content,
             msg_type=msg_type,
             mentions=mentions or [],
             channel=channel,
+            thread_id=thread_id,
         )
         await event_bus.publish("message", msg.model_dump())
         asyncio.create_task(save_message(msg))
@@ -172,7 +181,7 @@ class BaseAgent:
 
     def _system_prompt(self) -> str:
         return (
-            f"You are {self.name}, a {self.agent.role.value} in an AI collaboration team.\n"
+            f"You are {self.name}, a {self.agent.role} in an AI collaboration team.\n"
             f"Personality: {self.agent.personality}\n"
             f"Skills: {', '.join(self.agent.skills)}\n"
             f"You are working on project {self.agent.project_id}.\n"
