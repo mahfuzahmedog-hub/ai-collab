@@ -7,7 +7,8 @@ from fastapi import WebSocket, WebSocketDisconnect
 from app.websocket.manager import ws_manager
 from app.core.event_bus import event_bus
 from app.services.agent_manager import agent_manager
-from app.db.repository import load_project_messages, load_project_agents, load_project, save_project
+from app.db.repository import load_project_messages, load_project_agents, load_project, save_project, save_message
+from app.models.message import Message
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                         "timestamp": datetime.utcnow().isoformat() + "Z",
                     }
                     await event_bus.publish("message", msg)
+                    asyncio.create_task(save_message(Message(**msg)))
 
                     if channel.startswith("dm-"):
                         agent_name = channel[3:]
