@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -6,7 +7,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from app.websocket.manager import ws_manager
 from app.core.event_bus import event_bus
 from app.services.agent_manager import agent_manager
-from app.db.repository import load_project_messages, load_project_agents, load_project
+from app.db.repository import load_project_messages, load_project_agents, load_project, save_project
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             title = args.get("title", "Untitled Project")
             description = args.get("description", "")
             project = Project(title=title, description=description, id=project_id)
+            asyncio.create_task(save_project(project))
             boss = await agent_manager.create_boss(project_id)
             await boss.initialize_project(project)
             agents = agent_manager.list_agents(project_id)
