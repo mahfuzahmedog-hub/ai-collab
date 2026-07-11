@@ -16,8 +16,8 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./data/ai_collab.db"
     redis_url: str = "redis://localhost:6379/0"
 
-    llm_default_provider: str = "groq"
-    llm_default_model: str = "qwen/qwen3-32b"
+    llm_default_provider: str = "omniroute"
+    llm_default_model: str = "groq/qwen/qwen3-32b"
 
     openai_api_key: Optional[str] = None
     openai_base_url: Optional[str] = None

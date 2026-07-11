@@ -20,9 +20,9 @@ services:
       - key: OMNIROUTE_BASE_URL
         value: https://desktop-5903s8a.tail53c303.ts.net/v1
       - key: LLM_DEFAULT_PROVIDER
-        value: groq
+        value: omniroute
       - key: LLM_DEFAULT_MODEL
-        value: qwen/qwen3-32b
+        value: groq/qwen/qwen3-32b
       - key: CORS_ORIGINS
         value: '["http://localhost:3000","https://ai-collab-13pv.vercel.app","https://*.vercel.app"]'
 
