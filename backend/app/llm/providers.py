@@ -282,11 +282,22 @@ class OmniRouteProvider(LLMProvider):
             base_url=settings.omniroute_base_url,
             model=settings.omniroute_default_model,
         )
+        # Support multiple comma-separated API keys for rotation on rate limits.
+        raw = settings.omniroute_api_key or ""
+        self._keys = [k.strip() for k in raw.split(",") if k.strip()]
+        self._key_idx = 0
         self._client = httpx.AsyncClient(timeout=120)
 
     @property
     def name(self) -> str:
         return "omniroute"
+
+    def _next_key(self) -> str:
+        if not self._keys:
+            return self.config.api_key or ""
+        key = self._keys[self._key_idx % len(self._keys)]
+        self._key_idx += 1
+        return key
 
     def _extract_content(self, choice: dict) -> str:
         # Handle both non-streaming and streaming responses
@@ -305,30 +316,38 @@ class OmniRouteProvider(LLMProvider):
         )
 
     async def _request(self, body: dict) -> httpx.Response:
-        for attempt in range(MAX_RETRIES):
+        # ponytail: rotate across keys on 429; total attempts bounded by
+        # max(MAX_RETRIES, num_keys) so every key gets a shot before giving up.
+        attempts = max(MAX_RETRIES, len(self._keys) or 1)
+        last_exc: Exception | None = None
+        for attempt in range(attempts):
+            key = self._next_key()
             try:
                 resp = await self._client.post(
                     f"{self.config.base_url}/chat/completions",
                     headers={
-                        "Authorization": f"Bearer {self.config.api_key}",
+                        "Authorization": f"Bearer {key}",
                         "Content-Type": "application/json",
                     },
                     json=body,
                 )
-                if resp.status_code in (429, 502, 503) and attempt + 1 < MAX_RETRIES:
-                    delay = BASE_DELAY * (2 ** attempt)
-                    logger.warning("OmniRoute responded %d (attempt %d/%d), retrying in %.1fs", resp.status_code, attempt + 1, MAX_RETRIES, delay)
+                if resp.status_code in (429, 502, 503) and attempt + 1 < attempts:
+                    delay = BASE_DELAY * (2 ** min(attempt, 3))
+                    logger.warning("OmniRoute %d (attempt %d/%d, key #%d), retrying in %.1fs", resp.status_code, attempt + 1, attempts, self._key_idx, delay)
                     await asyncio.sleep(delay)
                     continue
                 resp.raise_for_status()
                 return resp
-            except httpx.TimeoutException:
-                if attempt + 1 < MAX_RETRIES:
-                    delay = BASE_DELAY * (2 ** attempt)
-                    logger.warning("OmniRoute timeout (attempt %d/%d), retrying in %.1fs", attempt + 1, MAX_RETRIES, delay)
+            except httpx.TimeoutException as e:
+                last_exc = e
+                if attempt + 1 < attempts:
+                    delay = BASE_DELAY * (2 ** min(attempt, 3))
+                    logger.warning("OmniRoute timeout (attempt %d/%d), retrying in %.1fs", attempt + 1, attempts, delay)
                     await asyncio.sleep(delay)
                     continue
                 raise
+        if last_exc:
+            raise last_exc
         raise RuntimeError("OmniRoute max retries exceeded")
 
     async def chat(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096) -> str:
@@ -355,7 +374,7 @@ class OmniRouteProvider(LLMProvider):
             async with self._client.stream(
                 "POST", f"{self.config.base_url}/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {self.config.api_key}",
+                    "Authorization": f"Bearer {self._next_key()}",
                     "Content-Type": "application/json",
                 },
                 json=body,
