@@ -48,6 +48,9 @@ def _add_sqlite_columns(connection):
     missing_agent = [c for c in ["channel", "emoji", "color", "max_tokens", "display_name", "mission", "reporting_structure", "version", "is_permanent"] if c not in agent_cols]
     missing_project = [c for c in ["tags"] if c not in project_cols]
 
+    message_cols = [c["name"] for c in inspector.get_columns("messages")]
+    missing_message = [c for c in ["thread_id"] if c not in message_cols]
+
     for col in missing_agent:
         try:
             connection.execute(text(f"ALTER TABLE agents ADD COLUMN {col} TEXT DEFAULT ''"))
@@ -60,6 +63,12 @@ def _add_sqlite_columns(connection):
             logger.info("Added column projects.%s", col)
         except Exception as e:
             logger.warning("Could not add projects.%s: %s", col, e)
+    for col in missing_message:
+        try:
+            connection.execute(text(f"ALTER TABLE messages ADD COLUMN {col} TEXT"))
+            logger.info("Added column messages.%s", col)
+        except Exception as e:
+            logger.warning("Could not add messages.%s: %s", col, e)
 
 
 def _add_postgres_columns(connection):
@@ -88,6 +97,10 @@ def _add_postgres_columns(connection):
         connection.execute(text("ALTER TABLE agents ADD COLUMN is_permanent BOOLEAN DEFAULT false"))
     if "tags" not in project_cols:
         connection.execute(text("ALTER TABLE projects ADD COLUMN tags JSON DEFAULT '[]'::json"))
+
+    message_cols = [c["name"] for c in inspector.get_columns("messages")]
+    if "thread_id" not in message_cols:
+        connection.execute(text("ALTER TABLE messages ADD COLUMN thread_id VARCHAR"))
 
 
 if __name__ == "__main__":

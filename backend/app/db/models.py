@@ -95,6 +95,7 @@ class MessageModel(Base):
     content = Column(Text, nullable=False)
     msg_type = Column(String(50), default="chat")
     channel = Column(String(50), default="general")
+    thread_id = Column(String, nullable=True)
     reply_to = Column(String, nullable=True)
     mentions = Column(JSON, default=list)
     attachments = Column(JSON, default=list)

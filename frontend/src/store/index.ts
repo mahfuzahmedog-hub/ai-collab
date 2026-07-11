@@ -176,7 +176,8 @@ export const useStore = create<AppState>((set) => ({
     set((s) => ({
       tasks: s.tasks.map((t) => (t.id === id ? { ...t, ...data } : t)),
     })),
-  addMessage: (m) => set((s) => ({ messages: [...s.messages, m] })),
+  addMessage: (m) =>
+    set((s) => (s.messages.some((x) => x.id === m.id) ? {} : { messages: [...s.messages, m] })),
   updateMessage: (id, content) =>
     set((s) => ({
       messages: s.messages.map((m) => (m.id === id ? { ...m, content } : m)),

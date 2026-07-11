@@ -27,6 +27,7 @@ interface EventCardProps {
 }
 
 const ROLE_COLORS: Record<string, string> = {
+  coworker: "bg-primary-600",
   boss: "bg-primary-600",
   backend_engineer: "bg-blue-600",
   frontend_engineer: "bg-pink-600",
@@ -39,6 +40,7 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 const ROLE_ICONS: Record<string, React.ReactNode> = {
+  coworker: <Bot className="w-4 h-4" />,
   boss: <Bot className="w-4 h-4" />,
   backend_engineer: <Terminal className="w-4 h-4" />,
   frontend_engineer: <FileText className="w-4 h-4" />,

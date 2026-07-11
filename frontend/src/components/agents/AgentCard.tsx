@@ -28,26 +28,26 @@ const roleIcons: Record<string, string> = {
 };
 
 export function AgentCard({ agent }: { agent: Agent }) {
-  const isBoss = agent.role === "boss" || agent.role === "coworker";
+  const isCoworker = agent.role === "boss" || agent.role === "coworker";
 
-  if (isBoss) {
+  if (isCoworker) {
     return (
-      <div className="bg-gradient-to-br from-yellow-500/5 to-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 hover:border-yellow-500/50 transition-all col-span-full sm:col-span-2 lg:col-span-1">
+      <div className="bg-gradient-to-br from-primary-500/5 to-primary-500/10 border border-primary-500/30 rounded-lg p-4 hover:border-primary-500/50 transition-all col-span-full sm:col-span-2 lg:col-span-1">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-yellow-500/20 flex items-center justify-center text-2xl shrink-0 ring-2 ring-yellow-500/30">
-            👑
+          <div className="w-12 h-12 rounded-full bg-primary-500/20 flex items-center justify-center text-2xl shrink-0 ring-2 ring-primary-500/30">
+            🤝
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <h3 className="text-base font-bold text-yellow-400 truncate">{agent.name}</h3>
+              <h3 className="text-base font-bold text-primary-400 truncate">{agent.display_name || agent.name}</h3>
               <div className={clsx("w-2.5 h-2.5 rounded-full shrink-0", statusColors[agent.status] || "bg-dark-500")} />
             </div>
-            <p className="text-xs text-yellow-500/80">Engineering Manager</p>
+            <p className="text-xs text-primary-400/80">Your AI Coworker</p>
           </div>
         </div>
 
         <div className="mt-3 flex flex-wrap gap-1.5">
-          <span className="text-xs bg-yellow-500/10 text-yellow-400 px-2 py-0.5 rounded-full font-medium">Team Lead</span>
+          <span className="text-xs bg-primary-500/10 text-primary-400 px-2 py-0.5 rounded-full font-medium">Coworker</span>
           {agent.skills.slice(0, 3).map((skill) => (
             <span key={skill} className="text-xs bg-dark-700 text-dark-300 px-1.5 py-0.5 rounded">
               {skill}
@@ -57,9 +57,9 @@ export function AgentCard({ agent }: { agent: Agent }) {
 
         {agent.status === "thinking" && (
           <div className="mt-3 flex gap-1">
-            <span className="thinking-dot w-1.5 h-1.5 bg-yellow-400 rounded-full" />
-            <span className="thinking-dot w-1.5 h-1.5 bg-yellow-400 rounded-full" />
-            <span className="thinking-dot w-1.5 h-1.5 bg-yellow-400 rounded-full" />
+            <span className="thinking-dot w-1.5 h-1.5 bg-primary-400 rounded-full" />
+            <span className="thinking-dot w-1.5 h-1.5 bg-primary-400 rounded-full" />
+            <span className="thinking-dot w-1.5 h-1.5 bg-primary-400 rounded-full" />
           </div>
         )}
       </div>

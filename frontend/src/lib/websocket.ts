@@ -126,16 +126,10 @@ function handleMessage(data: any) {
 
   switch (data.type) {
     case "message":
-      const activeChannel = store.activeChannel;
-      const activeThread = store.activeThread;
-      // If this message belongs to the active thread, add it
-      if (data.thread_id && data.thread_id === activeThread) {
-        store.addMessage(data as Message);
-      }
-      // If this message is in the active channel and not a thread reply, add it
-      else if (!data.thread_id && data.channel === activeChannel) {
-        store.addMessage(data as Message);
-      }
+      // Store ALL messages regardless of channel/thread; Timeline & ThreadView
+      // filter by active channel/thread for display. Prevents agent messages on
+      // other channels from being silently dropped.
+      store.addMessage(data as Message);
       break;
 
     case "message_edited":

@@ -171,7 +171,7 @@ async def load_project_messages(project_id: str, limit: int = 200) -> list[Messa
                 reply_to=row.reply_to,
                 mentions=row.mentions or [],
                 attachments=row.attachments or [],
-                metadata=row.metadata or {},
+                metadata=row.msg_metadata or {},
                 timestamp=row.timestamp.isoformat() + "Z" if row.timestamp else "",
             ))
         return messages

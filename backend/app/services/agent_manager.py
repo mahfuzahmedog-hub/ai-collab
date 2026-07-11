@@ -42,6 +42,12 @@ class AgentManager:
             proj = await load_project(project_id)
             for a in workers:
                 if a.role in ("coworker", "boss"):
+                    # Normalize legacy "Boss" leads to the Coworker identity (Option A)
+                    if a.role == "boss" or a.name == "Boss":
+                        a.role = "coworker"
+                        if a.name == "Boss":
+                            a.name = "Coworker"
+                        asyncio.create_task(save_agent(a))
                     self.boss = CoworkerAgent(a)
                     self.boss.project = proj
                     await self.boss.start()

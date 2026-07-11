@@ -120,7 +120,7 @@ function AgentList() {
   }
 
   const boss = agents.find((a) => a.role === "boss" || a.role === "coworker");
-  const workers = agents.filter((a) => a.role !== "boss");
+  const workers = agents.filter((a) => a.role !== "boss" && a.role !== "coworker");
 
   return (
     <div className="flex-1 flex flex-col border-t border-dark-700 overflow-hidden">
@@ -138,8 +138,8 @@ function AgentList() {
                 {boss.name.charAt(0)}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-medium text-white">{boss.name}</div>
-                <div className="text-xs text-primary-400">Engineering Manager</div>
+                <div className="font-medium text-white">{boss.display_name || boss.name}</div>
+                <div className="text-xs text-primary-400">Your AI Coworker</div>
               </div>
               <div className="text-lg" title={boss.status}>{PRESENCE_EMOJI[boss.status] || "🤖"}</div>
             </div>

@@ -68,6 +68,14 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                             asyncio.create_task(save_notification(n))
                             await event_bus.publish("notification", n.model_dump())
 
+                    # Self-heal: ensure the Coworker is loaded for this project
+                    # (Render free tier spins down; in-memory boss is lost on cold start).
+                    if agent_manager.boss is None or agent_manager.boss.agent.project_id != project_id:
+                        try:
+                            await agent_manager.restore_boss(project_id)
+                        except Exception as e:
+                            logger.warning("lazy restore_boss failed: %s", e)
+
                     if channel.startswith("dm-"):
                         agent_name = channel[3:]
                         found = False
