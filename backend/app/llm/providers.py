@@ -332,10 +332,20 @@ class OmniRouteProvider(LLMProvider):
                     json=body,
                 )
                 if resp.status_code in (429, 502, 503) and attempt + 1 < attempts:
+                    body_preview = ""
+                    try:
+                        body_preview = resp.text[:300]
+                    except Exception:
+                        pass
                     delay = BASE_DELAY * (2 ** min(attempt, 3))
-                    logger.warning("OmniRoute %d (attempt %d/%d, key #%d), retrying in %.1fs", resp.status_code, attempt + 1, attempts, self._key_idx, delay)
+                    logger.warning("OmniRoute %d (attempt %d/%d, key #%d, model=%s): %s | retrying in %.1fs", resp.status_code, attempt + 1, attempts, self._key_idx, body.get("model"), body_preview, delay)
                     await asyncio.sleep(delay)
                     continue
+                if resp.status_code >= 400:
+                    try:
+                        logger.error("OmniRoute %d final (model=%s): %s", resp.status_code, body.get("model"), resp.text[:300])
+                    except Exception:
+                        pass
                 resp.raise_for_status()
                 return resp
             except httpx.TimeoutException as e:
