@@ -6,9 +6,11 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    sourceDir: backend
     envVars:
       - key: PYTHON_VERSION
-        value: 3.12.0
+        value: "3.12"
       - key: DATABASE_URL
         fromDatabase:
           name: ai-collab-db
@@ -20,7 +22,7 @@ services:
       - key: LLM_DEFAULT_MODEL
         value: gpt-4o-mini
       - key: CORS_ORIGINS
-        value: '["http://localhost:3000","https://ai-collab-13pv.vercel.app"]'
+        value: '["http://localhost:3000","https://ai-collab-13pv.vercel.app","https://*.vercel.app"]'
 
 datastores:
   - type: postgres
