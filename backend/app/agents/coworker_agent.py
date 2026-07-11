@@ -777,12 +777,10 @@ Team members: {team_info}
 
 Respond professionally as the Coworker Agent. If the user is asking for work to be done, delegate to the appropriate team member via [ACTION] blocks. If they're asking a question in a specific channel, answer it."""
 
-        full = ""
-        async for chunk in self.think_stream(prompt):
-            full += chunk
-        actions = self._parse_actions(full)
-        clean = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', full, flags=re.DOTALL).strip()
-        await self.send_message(project_id, clean or full, channel=channel)
+        response = await self.think(prompt)
+        actions = self._parse_actions(response)
+        clean = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', response, flags=re.DOTALL).strip()
+        await self.send_message(project_id, clean or response, channel=channel)
         for action in actions:
             await self._execute_action(action, channel)
 
