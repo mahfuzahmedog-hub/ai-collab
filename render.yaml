@@ -15,12 +15,14 @@ services:
         fromDatabase:
           name: ai-collab-db
           property: connectionString
-      - key: OPENAI_API_KEY
+      - key: OMNIROUTE_API_KEY
         sync: false
+      - key: OMNIROUTE_BASE_URL
+        value: https://desktop-5903s8a.tail53c303.ts.net/v1
       - key: LLM_DEFAULT_PROVIDER
-        value: openai
+        value: omniroute
       - key: LLM_DEFAULT_MODEL
-        value: gpt-4o-mini
+        value: groq/qwen/qwen3-32b
       - key: CORS_ORIGINS
         value: '["http://localhost:3000","https://ai-collab-13pv.vercel.app","https://*.vercel.app"]'
 

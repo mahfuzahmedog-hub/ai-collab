@@ -289,8 +289,20 @@ class OmniRouteProvider(LLMProvider):
         return "omniroute"
 
     async def _extract_content(self, choice: dict) -> str:
+        # Handle both non-streaming and streaming responses
+        # For streaming responses, delta contains the content/reasoning_content
+        if "delta" in choice:
+            return (
+                choice.get("delta", {}).get("content")
+                or choice.get("delta", {}).get("reasoning_content", "")
+            )
+        
+        # For non-streaming responses, message contains content/reasoning_content
         msg = choice.get("message", choice)
-        return msg.get("content") or msg.get("reasoning_content", "")
+        return (
+            msg.get("content")
+            or msg.get("reasoning_content", "")
+        )
 
     async def _request(self, body: dict) -> httpx.Response:
         for attempt in range(MAX_RETRIES):
@@ -355,7 +367,10 @@ class OmniRouteProvider(LLMProvider):
                             break
                         try:
                             chunk = json.loads(data)
-                            delta = chunk["choices"][0].get("delta", {}).get("content", "")
+                            delta = (
+                                chunk["choices"][0].get("delta", {}).get("content")
+                                or chunk["choices"][0].get("delta", {}).get("reasoning_content", "")
+                            )
                             if delta:
                                 yield delta
                         except json.JSONDecodeError:
