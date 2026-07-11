@@ -339,7 +339,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
 
     elif command == "approve":
         approval_id = args.get("approval_id", "")
-        from app.db.repository import get_approval, save_approval, delete_channel, load_project_agents
+        from app.db.repository import get_approval, save_approval, delete_channel
         from app.models.ops import Approval
         a = await get_approval(approval_id)
         if a and a.status == "pending":
@@ -375,13 +375,40 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
         new_project_id = args.get("project_id", "")
         if new_project_id:
             # Switch agent manager to new project
-            await agent_manager.switch_project(new_project_id)
+            try:
+                await agent_manager.switch_project(new_project_id)
+            except Exception as e:
+                logger.warning("switch_project failed: %s", e)
+
+            # Restore the CoworkerAgent + channels in memory so returning users can chat
+            try:
+                await agent_manager.restore_boss(new_project_id)
+                await agent_manager.restore_workspace(new_project_id)
+            except Exception as e:
+                logger.warning("restore failed: %s", e)
+
             # Load new project data
-            messages = await load_project_messages(new_project_id, limit=200)
-            agents = await load_project_agents(new_project_id)
-            proj = await load_project(new_project_id)
-            file_tree = await get_file_tree(new_project_id)
-            
+            try:
+                messages = await load_project_messages(new_project_id, limit=200)
+            except Exception as e:
+                logger.warning("load_project_messages failed: %s", e)
+                messages = []
+            try:
+                agents = await load_project_agents(new_project_id)
+            except Exception as e:
+                logger.warning("load_project_agents failed: %s", e)
+                agents = []
+            try:
+                proj = await load_project(new_project_id)
+            except Exception as e:
+                logger.warning("load_project failed: %s", e)
+                proj = None
+            try:
+                file_tree = await get_file_tree(new_project_id)
+            except Exception as e:
+                logger.warning("get_file_tree failed: %s", e)
+                file_tree = []
+
             await ws.send_text(json.dumps({
                 "type": "message_history",
                 "messages": [m.model_dump() for m in messages],

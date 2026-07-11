@@ -86,7 +86,8 @@ class AgentManager:
         await self._restore_project(project_id)
         if self.boss:
             self.boss.agent.project_id = project_id
-            self.boss.project.id = project_id if self.boss.project else None
+            if self.boss.project:
+                self.boss.project.id = project_id
 
     async def _restore_project(self, project_id: str):
         try:

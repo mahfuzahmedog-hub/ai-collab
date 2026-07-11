@@ -1,35 +1,25 @@
 "use client";
 
 import { useEffect } from "react";
-import { connect, sendCommand } from "@/lib/websocket";
-import { TopBar } from "@/components/layout/TopBar";
-import { LeftNav } from "@/components/layout/LeftNav";
-import { AgentSidebar } from "@/components/layout/AgentSidebar";
-import { Timeline } from "@/components/timeline/Timeline";
-import { ApprovalDialog } from "@/components/approvals/ApprovalDialog";
+import { useRouter } from "next/navigation";
+import { getProjectId } from "@/lib/websocket";
 
+// Workspace resolver: route into the persistent shell. The WS create_project
+// flow auto-creates the project on connect, so just route into the id.
 export default function Home() {
+  const router = useRouter();
+
   useEffect(() => {
-    connect();
-    // Check for project in URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlProject = urlParams.get("project");
-    if (urlProject) {
-      sendCommand("switch_project", { project_id: urlProject });
-    }
-  }, []);
+    const active =
+      localStorage.getItem("active_project_id") ||
+      localStorage.getItem("project_id") ||
+      getProjectId();
+    router.replace(`/workspace/${encodeURIComponent(active)}?tab=chat`);
+  }, [router]);
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-dark-950">
-      <TopBar />
-      <div className="flex flex-1 overflow-hidden">
-        <LeftNav />
-        <main className="flex-1 overflow-hidden min-w-0 flex flex-col">
-          <Timeline />
-        </main>
-        <AgentSidebar />
-      </div>
-      <ApprovalDialog />
+    <div className="flex h-screen items-center justify-center bg-dark-950 text-dark-400 text-sm">
+      Loading workspace…
     </div>
   );
 }

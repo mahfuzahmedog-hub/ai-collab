@@ -2,9 +2,33 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+:root,
+.dark {
   --foreground: 255, 255, 255;
   --background: 10, 10, 10;
+
+  /* Design tokens — map to existing dark palette (no visual change). */
+  --dark-950: #0a0a0a;
+  --dark-900: #111111;
+  --dark-800: #1a1a1a;
+  --dark-700: #2a2a2a;
+  --dark-600: #404040;
+  --dark-500: #606060;
+  --dark-400: #808080;
+  --dark-300: #a0a0a0;
+  --dark-200: #c0c0c0;
+  --dark-100: #e0e0e0;
+  --dark-50: #f0f0f0;
+  --primary-400: #60a5fa;
+  --primary-600: #2563eb;
+
+  /* Semantic tokens (extension point for light mode later). */
+  --color-bg: #0a0a0a;
+  --color-surface: #111111;
+  --color-border: #2a2a2a;
+  --color-text-primary: #ffffff;
+  --color-text-muted: #808080;
+  --color-accent: #3b82f6;
 }
 
 body {

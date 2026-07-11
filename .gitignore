@@ -14,8 +14,8 @@ dist/
 # local env overrides
 .env.local
 
-# workspace directories
-workspace/
+# workspace directories (root-level agent file output only)
+/workspace/
 
 # ponytail agent config
 .ponytail/

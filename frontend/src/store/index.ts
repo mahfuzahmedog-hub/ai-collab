@@ -41,6 +41,12 @@ interface AppState {
   // UI state
   activeTab: string;
 
+  // Workspace shell UI (M1)
+  panelSizes: Record<string, number>;
+  leftCollapsed: boolean;
+  rightCollapsed: boolean;
+  commandPaletteOpen: boolean;
+
   // Actions
   setProjects: (p: Project[]) => void;
   setActiveProjectId: (id: string) => void;
@@ -80,6 +86,10 @@ interface AppState {
   setStreamingChunk: (chunk: { agentId: string; content: string; done: boolean } | null) => void;
   setConnected: (c: boolean) => void;
   setActiveTab: (t: string) => void;
+  setPanelSize: (key: string, size: number) => void;
+  toggleLeftCollapsed: () => void;
+  toggleRightCollapsed: () => void;
+  setCommandPaletteOpen: (v: boolean) => void;
   clearProjectData: () => void;
 }
 
@@ -116,6 +126,10 @@ export const useStore = create<AppState>((set) => ({
   streamingChunk: null,
   connected: false,
   activeTab: "workspace",
+  panelSizes: {},
+  leftCollapsed: false,
+  rightCollapsed: false,
+  commandPaletteOpen: false,
 
   setProjects: (p) => set({ projects: p }),
   setActiveProjectId: (id) => set({ activeProjectId: id }),
@@ -189,6 +203,10 @@ export const useStore = create<AppState>((set) => ({
   setStreamingChunk: (chunk) => set({ streamingChunk: chunk }),
   setConnected: (c) => set({ connected: c }),
   setActiveTab: (t) => set({ activeTab: t }),
+  setPanelSize: (key, size) => set((s) => ({ panelSizes: { ...s.panelSizes, [key]: size } })),
+  toggleLeftCollapsed: () => set((s) => ({ leftCollapsed: !s.leftCollapsed })),
+  toggleRightCollapsed: () => set((s) => ({ rightCollapsed: !s.rightCollapsed })),
+  setCommandPaletteOpen: (v) => set({ commandPaletteOpen: v }),
   clearProjectData: () =>
     set({
       agents: [],
