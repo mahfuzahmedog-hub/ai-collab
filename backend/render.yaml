@@ -2,18 +2,29 @@ services:
   - type: web
     name: ai-collab-backend
     runtime: python
-    buildCommand: ""
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ai-collab-db
+          property: connectionString
+      - key: OPENAI_API_KEY
+        sync: false
       - key: LLM_DEFAULT_PROVIDER
-        value: omniroute
-      - key: OMNIROUTE_BASE_URL
-        value: https://aye-significantly-mile-floppy.trycloudflare.com/v1
+        value: openai
+      - key: LLM_DEFAULT_MODEL
+        value: gpt-4o-mini
+      - key: CORS_ORIGINS
+        value: '["http://localhost:3000","https://ai-collab-13pv.vercel.app"]'
 
 datastores:
   - type: postgres
     name: ai-collab-db
     plan: free
     region: oregon
+    postgresMajorVersion: 16
