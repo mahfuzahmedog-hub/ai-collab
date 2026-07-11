@@ -45,7 +45,7 @@ def _add_sqlite_columns(connection):
     agent_cols = [c["name"] for c in inspector.get_columns("agents")]
     project_cols = [c["name"] for c in inspector.get_columns("projects")]
 
-    missing_agent = [c for c in ["channel", "emoji", "color", "max_tokens"] if c not in agent_cols]
+    missing_agent = [c for c in ["channel", "emoji", "color", "max_tokens", "display_name", "mission", "reporting_structure", "version", "is_permanent"] if c not in agent_cols]
     missing_project = [c for c in ["tags"] if c not in project_cols]
 
     for col in missing_agent:
@@ -76,6 +76,16 @@ def _add_postgres_columns(connection):
         connection.execute(text("ALTER TABLE agents ADD COLUMN color VARCHAR(50) DEFAULT ''"))
     if "max_tokens" not in agent_cols:
         connection.execute(text("ALTER TABLE agents ADD COLUMN max_tokens INTEGER DEFAULT 4096"))
+    if "display_name" not in agent_cols:
+        connection.execute(text("ALTER TABLE agents ADD COLUMN display_name VARCHAR(255)"))
+    if "mission" not in agent_cols:
+        connection.execute(text("ALTER TABLE agents ADD COLUMN mission VARCHAR(1000)"))
+    if "reporting_structure" not in agent_cols:
+        connection.execute(text("ALTER TABLE agents ADD COLUMN reporting_structure VARCHAR(500)"))
+    if "version" not in agent_cols:
+        connection.execute(text("ALTER TABLE agents ADD COLUMN version VARCHAR(50) DEFAULT '1.0'"))
+    if "is_permanent" not in agent_cols:
+        connection.execute(text("ALTER TABLE agents ADD COLUMN is_permanent BOOLEAN DEFAULT false"))
     if "tags" not in project_cols:
         connection.execute(text("ALTER TABLE projects ADD COLUMN tags JSON DEFAULT '[]'::json"))
 
