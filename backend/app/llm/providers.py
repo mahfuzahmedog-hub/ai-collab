@@ -12,6 +12,16 @@ MAX_CONCURRENT = 2
 MAX_RETRIES = 3
 BASE_DELAY = 1.0
 
+# ponytail: reliable groq models tried in order when the primary 429s.
+# These are same-account keys so key rotation can't beat a model-level limit;
+# switching models is what actually gets past a per-model rate cap.
+OMNIROUTE_FALLBACK_MODELS = [
+    "groq/llama-3.3-70b-versatile",
+    "groq/meta-llama/llama-4-scout-17b-16e-instruct",
+    "groq/openai/gpt-oss-120b",
+    "auto/best-free",
+]
+
 _omniroute_sem = asyncio.Semaphore(MAX_CONCURRENT)
 
 
@@ -360,17 +370,32 @@ class OmniRouteProvider(LLMProvider):
             raise last_exc
         raise RuntimeError("OmniRoute max retries exceeded")
 
+    def _model_chain(self) -> list[str]:
+        primary = self.config.model or "auto/best-free"
+        chain = [primary] + [m for m in OMNIROUTE_FALLBACK_MODELS if m != primary]
+        return chain
+
     async def chat(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096) -> str:
         async with _omniroute_sem:
-            body = {
-                "model": self.config.model or "auto",
-                "messages": messages,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-                "stream": False,
-            }
-            resp = await self._request(body)
-            return self._extract_content(resp.json()["choices"][0])
+            last_exc: Exception | None = None
+            for model in self._model_chain():
+                body = {
+                    "model": model,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "stream": False,
+                }
+                try:
+                    resp = await self._request(body)
+                    return self._extract_content(resp.json()["choices"][0])
+                except Exception as e:
+                    last_exc = e
+                    logger.warning("OmniRoute model %s failed (%s), trying next", model, str(e)[:120])
+                    continue
+            if last_exc:
+                raise last_exc
+            raise RuntimeError("OmniRoute: all models failed")
 
     async def chat_stream(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096):
         async with _omniroute_sem:

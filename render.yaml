@@ -22,7 +22,7 @@ services:
       - key: LLM_DEFAULT_PROVIDER
         value: omniroute
       - key: LLM_DEFAULT_MODEL
-        value: auto/cheap
+        value: groq/llama-3.3-70b-versatile
       - key: CORS_ORIGINS
         value: '["http://localhost:3000","https://ai-collab-13pv.vercel.app","https://*.vercel.app"]'
 
