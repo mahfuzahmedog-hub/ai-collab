@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     llm_default_provider: str = "omniroute"
-    llm_default_model: str = "groq/llama-3.3-70b-versatile"
+    llm_default_model: str = "groq/llama-3.1-8b-instant"
 
     openai_api_key: Optional[str] = None
     openai_base_url: Optional[str] = None
@@ -27,10 +27,10 @@ class Settings(BaseSettings):
     groq_base_url: str = "https://api.groq.com/openai/v1"
     openrouter_api_key: Optional[str] = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_default_model: str = "gryphe/mythomax-l2-13b"
+    openrouter_default_model: str = "meta-llama/llama-3.1-8b-instruct:free"
     omniroute_api_key: Optional[str] = None
     omniroute_base_url: str = "https://graduates-differently-curtis-contributor.trycloudflare.com/v1"
-    omniroute_default_model: str = "groq/llama-3.3-70b-versatile"
+    omniroute_default_model: str = "groq/llama-3.1-8b-instant"
     github_token: Optional[str] = None
     ollama_base_url: str = "http://localhost:11434"
 
