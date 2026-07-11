@@ -9,6 +9,7 @@ from app.core.event_bus import event_bus
 from app.services.agent_manager import agent_manager
 from app.db.repository import load_project_messages, load_project_agents, load_project, save_project, save_message
 from app.models.message import Message
+from app.models.channel import Channel
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +123,14 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             title = args.get("title", "Untitled Project")
             description = args.get("description", "")
             project = Project(title=title, description=description, id=project_id)
-            asyncio.create_task(save_project(project))
+            await save_project(project)
+
+            # Create default channels
+            from app.db.repository import save_channel
+            for ch_def in [{"id":"general","name":"#general"}, {"id":"planning","name":"#planning"}, {"id":"architecture","name":"#architecture"}, {"id":"dev","name":"#dev"}]:
+                ch = Channel(id=ch_def["id"], project_id=project_id, name=ch_def["name"])
+                asyncio.create_task(save_channel(ch))
+
             boss = await agent_manager.create_coworker(project_id)
             await boss.initialize_workspace(project)
             agents = agent_manager.list_agents(project_id)

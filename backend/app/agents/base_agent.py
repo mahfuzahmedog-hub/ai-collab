@@ -178,9 +178,24 @@ class BaseAgent:
 
     async def think_stream(self, prompt: str, temperature: Optional[float] = None):
         await self.set_status(AgentStatus.thinking)
+        memory_block = ""
+        if self.agent.memory.get("facts"):
+            memory_block = "\nMemory:\n" + "\n".join(
+                f"- {k}: {v}" for k, v in self.agent.memory["facts"].items()
+            )
+        try:
+            memories = await search_memories(self.agent.project_id, prompt, limit=5, agent_id=self.id)
+            if not memories:
+                memories = await load_memories(self.agent.project_id, self.id, limit=20)
+            if memories:
+                memory_block += "\nRecall:\n" + "\n".join(
+                    f"[{m.type}] {m.content[:200]}" for m in memories
+                )
+        except Exception:
+            pass
         messages = [
-            {"role": "system", "content": self._system_prompt()},
-            *self.agent.chat_history[-20:],
+            {"role": "system", "content": self._system_prompt() + memory_block},
+            *self.agent.chat_history[-100:],
             {"role": "user", "content": prompt},
         ]
         full_response = ""

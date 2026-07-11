@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { connect } from "@/lib/websocket";
 import { useStore } from "@/store";
+import { ApprovalDialog } from "@/components/approvals/ApprovalDialog";
 import { TrendingUp, DollarSign, Activity, Clock, AlertCircle } from "lucide-react";
 
 export default function DashboardPage() {
@@ -103,6 +104,7 @@ export default function DashboardPage() {
           </tbody>
         </table>
       </div>
+      <ApprovalDialog />
     </div>
   );
 }

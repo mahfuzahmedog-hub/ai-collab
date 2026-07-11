@@ -6,6 +6,7 @@ import { TopBar } from "@/components/layout/TopBar";
 import { LeftNav } from "@/components/layout/LeftNav";
 import { AgentSidebar } from "@/components/layout/AgentSidebar";
 import { Timeline } from "@/components/timeline/Timeline";
+import { ApprovalDialog } from "@/components/approvals/ApprovalDialog";
 
 export default function Home() {
   useEffect(() => {
@@ -28,6 +29,7 @@ export default function Home() {
         </main>
         <AgentSidebar />
       </div>
+      <ApprovalDialog />
     </div>
   );
 }

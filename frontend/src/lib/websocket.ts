@@ -3,8 +3,12 @@ import { useStore } from "@/store";
 
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let pingTimer: ReturnType<typeof setInterval> | null = null;
 let projectId = "";
 let projectInitialized = false;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_DELAY = 30000;
+const PING_INTERVAL = 25000;
 
 function getStorageItem(key: string): string | null {
   try {
@@ -46,6 +50,9 @@ export function connect() {
   ws = new WebSocket(url);
 
   ws.onopen = () => {
+    reconnectAttempts = 0;
+    if (pingTimer) clearInterval(pingTimer);
+    pingTimer = setInterval(() => { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type: "ping"})); }, PING_INTERVAL);
     useStore.getState().setConnected(true);
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
@@ -73,11 +80,14 @@ export function connect() {
 
   ws.onclose = () => {
     useStore.getState().setConnected(false);
-    projectInitialized = false;
-    reconnectTimer = setTimeout(() => connect(), 3000);
+    if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY);
+    reconnectAttempts++;
+    reconnectTimer = setTimeout(() => connect(), delay);
   };
 
-  ws.onerror = () => {
+  ws.onerror = (err) => {
+    console.error("WS error:", err);
     ws?.close();
   };
 }
