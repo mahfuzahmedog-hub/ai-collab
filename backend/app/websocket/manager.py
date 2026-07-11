@@ -30,7 +30,7 @@ class ConnectionManager:
     async def broadcast(self, project_id: str, message: dict):
         if project_id not in self._connections:
             return
-        data = json.dumps(message)
+        data = json.dumps(message, default=str)
         dead = set()
         for ws in self._connections[project_id]:
             try:
@@ -44,7 +44,7 @@ class ConnectionManager:
         ws = self._user_connections.get(user_id)
         if ws:
             try:
-                await ws.send_text(json.dumps(message))
+                await ws.send_text(json.dumps(message, default=str))
             except Exception:
                 pass
 

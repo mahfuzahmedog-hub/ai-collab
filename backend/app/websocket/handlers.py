@@ -305,7 +305,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             tasks = await load_project_tasks(project_id)
             await ws.send_text(json.dumps({
                 "type": "task_list",
-                "tasks": [t.model_dump() for t in tasks],
+                "tasks": [t.model_dump(mode="json") for t in tasks],
             }))
         except Exception as e:
             logger.warning("load_project_tasks failed: %s", e)
@@ -447,7 +447,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
                 tasks = await load_project_tasks(new_project_id)
                 await ws.send_text(json.dumps({
                     "type": "task_list",
-                    "tasks": [t.model_dump() for t in tasks],
+                    "tasks": [t.model_dump(mode="json") for t in tasks],
                 }))
             except Exception as e:
                 logger.warning("load_project_tasks failed: %s", e)
