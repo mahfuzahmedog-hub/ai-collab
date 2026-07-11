@@ -22,6 +22,11 @@ async def lifespan(app: FastAPI):
         logger.info("Database tables created")
     except Exception as e:
         logger.warning("Database init skipped: %s", e)
+    try:
+        from app.db.migrate import run_migration
+        await run_migration()
+    except Exception as e:
+        logger.warning("Migration skipped: %s", e)
     yield
     logger.info("Shutting down...")
     await agent_manager.stop_all()
