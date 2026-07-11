@@ -23,8 +23,10 @@ services:
         value: omniroute
       - key: LLM_DEFAULT_MODEL
         value: groq/llama-3.3-70b-versatile
+      - key: OMNIROUTE_DEFAULT_MODEL
+        value: groq/llama-3.3-70b-versatile
       - key: CORS_ORIGINS
-        value: '["http://localhost:3000","https://ai-collab-13pv.vercel.app","https://*.vercel.app"]'
+        value: '["http://localhost:3000","https://buildanything.vercel.app","https://ai-collab-frontend-omega.vercel.app","https://*.vercel.app"]'
 
 datastores:
   - type: postgres
