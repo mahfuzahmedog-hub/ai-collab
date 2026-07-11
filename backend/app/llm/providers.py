@@ -288,7 +288,7 @@ class OmniRouteProvider(LLMProvider):
     def name(self) -> str:
         return "omniroute"
 
-    async def _extract_content(self, choice: dict) -> str:
+    def _extract_content(self, choice: dict) -> str:
         # Handle both non-streaming and streaming responses
         # For streaming responses, delta contains the content/reasoning_content
         if "delta" in choice:
@@ -296,7 +296,7 @@ class OmniRouteProvider(LLMProvider):
                 choice.get("delta", {}).get("content")
                 or choice.get("delta", {}).get("reasoning_content", "")
             )
-        
+
         # For non-streaming responses, message contains content/reasoning_content
         msg = choice.get("message", choice)
         return (
