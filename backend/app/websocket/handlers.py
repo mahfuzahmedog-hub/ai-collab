@@ -301,6 +301,15 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             "files": file_tree,
         }))
         try:
+            from app.db.repository import load_project_tasks
+            tasks = await load_project_tasks(project_id)
+            await ws.send_text(json.dumps({
+                "type": "task_list",
+                "tasks": [t.model_dump() for t in tasks],
+            }))
+        except Exception as e:
+            logger.warning("load_project_tasks failed: %s", e)
+        try:
             from app.db.repository import load_project_channels_tree, load_project_threads
             channel_tree = await load_project_channels_tree(project_id)
             await ws.send_text(json.dumps({
@@ -433,7 +442,83 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
                 "type": "file_tree",
                 "files": file_tree,
             }))
+            try:
+                from app.db.repository import load_project_tasks
+                tasks = await load_project_tasks(new_project_id)
+                await ws.send_text(json.dumps({
+                    "type": "task_list",
+                    "tasks": [t.model_dump() for t in tasks],
+                }))
+            except Exception as e:
+                logger.warning("load_project_tasks failed: %s", e)
             await ws.send_text(json.dumps({
                 "type": "project_switched",
                 "project_id": new_project_id,
             }))
+
+    elif command == "create_task":
+        from app.models.task import Task, TaskPriority
+        from app.db.repository import save_task
+        title = args.get("title", "").strip()
+        if title:
+            task = Task(
+                project_id=project_id,
+                title=title,
+                description=args.get("description", ""),
+                priority=args.get("priority", "medium"),
+                assigned_to=args.get("assigned_to"),
+                assigned_by=user_id,
+            )
+            if args.get("assigned_to"):
+                task.status = "assigned"
+            await save_task(task)
+            await ws_manager.broadcast(project_id, {"type": "task_created", **task.model_dump()})
+
+    elif command == "update_task":
+        from app.db.repository import update_task_fields
+        task_id = args.get("task_id", "")
+        fields = {}
+        for k in ("status", "priority", "assigned_to", "title", "description"):
+            if k in args:
+                fields[k] = args[k]
+        if task_id and fields:
+            updated = await update_task_fields(project_id, task_id, **fields)
+            if updated:
+                await ws_manager.broadcast(project_id, {"type": "task_updated", "id": updated.id, **updated.model_dump()})
+
+    elif command in ("pause_agent", "resume_agent"):
+        from app.models.agent import AgentStatus
+        agent_id = args.get("agent_id", "")
+        target = None
+        if agent_manager.boss and agent_manager.boss.id == agent_id:
+            target = agent_manager.boss
+        elif agent_manager.boss and agent_id in agent_manager.boss.team:
+            target = agent_manager.boss.team[agent_id]
+        if target:
+            new_state = AgentStatus.paused if command == "pause_agent" else AgentStatus.idle
+            try:
+                await target.set_status(new_state, reason=("Paused by user" if command == "pause_agent" else "Resumed by user"))
+            except Exception as e:
+                logger.warning("%s failed: %s", command, e)
+
+    elif command == "mark_notification_read":
+        from app.db.repository import mark_notification_read
+        nid = args.get("notification_id", "")
+        if nid and await mark_notification_read(project_id, nid):
+            await ws_manager.broadcast(project_id, {"type": "notification_read", "notification_id": nid})
+
+    elif command == "read_file":
+        path = args.get("path", "")
+        content = None
+        try:
+            from app.db.repository import get_file_content
+            content = await get_file_content(project_id, path)
+        except Exception as e:
+            logger.warning("get_file_content failed: %s", e)
+        if content is None:
+            try:
+                from app.workspace.manager import read_file as ws_read_file
+                content = await ws_read_file(project_id, path)
+            except Exception as e:
+                content = f"[Error reading file: {e}]"
+        await ws.send_text(json.dumps({"type": "file_content", "path": path, "content": content}))

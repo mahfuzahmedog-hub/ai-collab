@@ -40,13 +40,20 @@ export function TabBar() {
   };
 
   return (
-    <nav className="h-10 flex-shrink-0 border-b border-dark-700 bg-dark-900 flex items-center px-2 gap-1 overflow-x-auto">
+    <nav
+      role="tablist"
+      aria-label="Workspace views"
+      className="h-10 flex-shrink-0 border-b border-dark-700 bg-dark-900 flex items-center px-2 gap-1 overflow-x-auto"
+    >
       {TABS.map((t) => (
         <button
           key={t.id}
+          role="tab"
+          aria-selected={activeTab === t.id}
+          aria-current={activeTab === t.id ? "page" : undefined}
           onClick={() => go(t.id)}
           className={clsx(
-            "px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap",
+            "px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500",
             activeTab === t.id
               ? "bg-primary-600/20 text-white"
               : "text-dark-300 hover:bg-dark-700 hover:text-white"
@@ -60,6 +67,7 @@ export function TabBar() {
         <span
           key={t.id}
           title="Coming soon"
+          aria-disabled="true"
           className="px-3 py-1.5 text-sm rounded-md text-dark-600 cursor-not-allowed whitespace-nowrap"
         >
           {t.label} <span className="text-[10px]">Soon</span>

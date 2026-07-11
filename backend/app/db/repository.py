@@ -207,6 +207,54 @@ async def save_task(task: Task):
         await s.commit()
 
 
+async def load_project_tasks(project_id: str) -> list[Task]:
+    async with async_session() as s:
+        result = await s.execute(
+            select(TaskModel).where(TaskModel.project_id == project_id).order_by(TaskModel.created_at.asc())
+        )
+        tasks = []
+        for r in result.scalars().all():
+            tasks.append(Task(
+                id=r.id,
+                project_id=r.project_id,
+                title=r.title,
+                description=r.description or "",
+                status=r.status or "waiting",
+                priority=r.priority or "medium",
+                assigned_to=r.assigned_to,
+                assigned_by=r.assigned_by,
+                dependencies=r.dependencies or [],
+                depends_on=r.depends_on or [],
+                subtasks=r.subtasks or [],
+                parent_task_id=r.parent_task_id,
+                reviews=r.reviews or [],
+                tests=r.tests or [],
+                artifacts=r.artifacts or [],
+                estimated_hours=r.estimated_hours,
+                started_at=(r.started_at.isoformat() + "Z") if r.started_at else None,
+                completed_at=(r.completed_at.isoformat() + "Z") if r.completed_at else None,
+            ))
+        return tasks
+
+
+async def update_task_fields(project_id: str, task_id: str, **fields) -> Optional[Task]:
+    async with async_session() as s:
+        result = await s.execute(
+            select(TaskModel).where(TaskModel.id == task_id, TaskModel.project_id == project_id)
+        )
+        row = result.scalar_one_or_none()
+        if not row:
+            return None
+        # Caller (handlers) whitelists keys, so a provided None is an intentional
+        # clear (e.g. unassign). Only skip keys the model doesn't have.
+        for k, v in fields.items():
+            if hasattr(row, k):
+                setattr(row, k, v)
+        await s.commit()
+    tasks = await load_project_tasks(project_id)
+    return next((t for t in tasks if t.id == task_id), None)
+
+
 async def save_project(project: Project):
     async with async_session() as s:
         stmt = select(ProjectModel).where(ProjectModel.id == project.id)
@@ -297,6 +345,18 @@ async def load_file_entries(project_id: str) -> list[dict]:
             }
             for row in rows
         ]
+
+
+async def get_file_content(project_id: str, path: str) -> Optional[str]:
+    async with async_session() as s:
+        result = await s.execute(
+            select(FileModel).where(
+                FileModel.project_id == project_id,
+                FileModel.path == path,
+            )
+        )
+        row = result.scalar_one_or_none()
+        return row.content if row else None
 
 
 async def delete_file_entry(project_id: str, path: str):

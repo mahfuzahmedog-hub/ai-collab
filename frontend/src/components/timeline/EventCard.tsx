@@ -3,6 +3,8 @@
 import { formatDistanceToNow } from "date-fns";
 import { Bot, FileText, Terminal, AlertCircle, CheckCircle } from "lucide-react";
 import { sendCreateThread } from "@/lib/websocket";
+import { Markdown } from "@/features/chat/Markdown";
+import { MessageActions } from "@/features/chat/MessageActions";
 
 interface EventCardProps {
   msg: {
@@ -97,7 +99,7 @@ export function EventCard({ msg, isLast, agents, isStreaming }: EventCardProps) 
   }
 
   return (
-    <div className="flex items-start gap-3" style={{ borderLeft: isLast ? "2px solid transparent" : "2px solid #374151" }}>
+    <div className="group flex items-start gap-3" style={{ borderLeft: isLast ? "2px solid transparent" : "2px solid #374151" }}>
       <div className="relative flex-shrink-0">
         <div className={`w-8 h-8 rounded-full ${roleColor} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
           {roleIcon}
@@ -115,7 +117,8 @@ export function EventCard({ msg, isLast, agents, isStreaming }: EventCardProps) 
             <span className="text-xs text-primary-400 bg-primary-600/20 px-1.5 py-0.5 rounded">#{msg.channel}</span>
           )}
         </div>
-        <div className="text-sm text-dark-100 whitespace-pre-wrap">{msg.content}</div>
+        <div className="text-sm text-dark-100"><Markdown>{msg.content}</Markdown></div>
+        <MessageActions message={msg as any} />
         {!msg.thread_id && (
           <button
             onClick={() => sendCreateThread(msg.id, `Thread on ${msg.sender_name}'s message`, msg.channel)}

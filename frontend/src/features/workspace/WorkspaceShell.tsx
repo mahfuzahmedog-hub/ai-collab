@@ -9,6 +9,9 @@ import { WorkspaceHeader } from "./WorkspaceHeader";
 import { TabBar } from "./TabBar";
 import { StatusBar } from "./StatusBar";
 import { ServerRail } from "./ServerRail";
+import { AgentProfile } from "@/features/agents/AgentProfile";
+import { NotificationCenter } from "@/features/notifications/NotificationCenter";
+import { CommandPalette } from "@/features/search/CommandPalette";
 
 // Persistent shell: the layout renders this once and never unmounts while
 // switching tabs (children swap via the route's ?tab= query).
@@ -82,6 +85,11 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
 
       <StatusBar />
       <ApprovalDialog />
+
+      {/* M4 / M5 overlays */}
+      <AgentProfile />
+      <NotificationCenter />
+      <CommandPalette />
     </div>
   );
 }

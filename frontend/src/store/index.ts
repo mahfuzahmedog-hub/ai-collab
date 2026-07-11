@@ -47,6 +47,14 @@ interface AppState {
   rightCollapsed: boolean;
   commandPaletteOpen: boolean;
 
+  // Files (M2)
+  fileContents: Record<string, string>;
+  selectedFile: string | null;
+
+  // Notifications / agent profile UI (M4/M5)
+  notificationsOpen: boolean;
+  activeAgentProfile: string | null;
+
   // Actions
   setProjects: (p: Project[]) => void;
   setActiveProjectId: (id: string) => void;
@@ -90,6 +98,11 @@ interface AppState {
   toggleLeftCollapsed: () => void;
   toggleRightCollapsed: () => void;
   setCommandPaletteOpen: (v: boolean) => void;
+  setFileContent: (path: string, content: string) => void;
+  setSelectedFile: (path: string | null) => void;
+  setNotificationsOpen: (v: boolean) => void;
+  markAllNotificationsRead: () => void;
+  setActiveAgentProfile: (id: string | null) => void;
   clearProjectData: () => void;
 }
 
@@ -130,6 +143,10 @@ export const useStore = create<AppState>((set) => ({
   leftCollapsed: false,
   rightCollapsed: false,
   commandPaletteOpen: false,
+  fileContents: {},
+  selectedFile: null,
+  notificationsOpen: false,
+  activeAgentProfile: null,
 
   setProjects: (p) => set({ projects: p }),
   setActiveProjectId: (id) => set({ activeProjectId: id }),
@@ -158,7 +175,7 @@ export const useStore = create<AppState>((set) => ({
       },
     })),
   setThreads: (t) => set({ threads: t }),
-  addThread: (t) => set((s) => ({ threads: [...s.threads, t] })),
+  addThread: (t) => set((s) => (s.threads.some((x) => x.id === t.id) ? {} : { threads: [...s.threads, t] })),
   setActiveThread: (id) => set({ activeThread: id }),
   setAgents: (a) => set({ agents: a }),
   addAgent: (a) => set((s) => ({ agents: [...s.agents, a] })),
@@ -171,7 +188,7 @@ export const useStore = create<AppState>((set) => ({
   removeAgent: (id) =>
     set((s) => ({ agents: s.agents.filter((a) => a.id !== id) })),
   setTasks: (t) => set({ tasks: t }),
-  addTask: (t) => set((s) => ({ tasks: [...s.tasks, t] })),
+  addTask: (t) => set((s) => (s.tasks.some((x) => x.id === t.id) ? {} : { tasks: [...s.tasks, t] })),
   updateTask: (id, data) =>
     set((s) => ({
       tasks: s.tasks.map((t) => (t.id === id ? { ...t, ...data } : t)),
@@ -208,6 +225,12 @@ export const useStore = create<AppState>((set) => ({
   toggleLeftCollapsed: () => set((s) => ({ leftCollapsed: !s.leftCollapsed })),
   toggleRightCollapsed: () => set((s) => ({ rightCollapsed: !s.rightCollapsed })),
   setCommandPaletteOpen: (v) => set({ commandPaletteOpen: v }),
+  setFileContent: (path, content) => set((s) => ({ fileContents: { ...s.fileContents, [path]: content } })),
+  setSelectedFile: (path) => set({ selectedFile: path }),
+  setNotificationsOpen: (v) => set({ notificationsOpen: v }),
+  markAllNotificationsRead: () =>
+    set((s) => ({ notifications: s.notifications.map((n) => ({ ...n, read: true })) })),
+  setActiveAgentProfile: (id) => set({ activeAgentProfile: id }),
   clearProjectData: () =>
     set({
       agents: [],

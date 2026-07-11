@@ -121,6 +121,38 @@ export function sendCreateThread(parentMessageId: string, title: string, channel
   sendCommand("create_thread", { parent_message_id: parentMessageId, title, channel });
 }
 
+export function sendCreateTask(title: string, opts: { description?: string; priority?: string; assigned_to?: string } = {}) {
+  sendCommand("create_task", { title, ...opts });
+}
+
+export function sendUpdateTask(taskId: string, fields: Record<string, any>) {
+  sendCommand("update_task", { task_id: taskId, ...fields });
+}
+
+export function sendPauseAgent(agentId: string) {
+  sendCommand("pause_agent", { agent_id: agentId });
+}
+
+export function sendResumeAgent(agentId: string) {
+  sendCommand("resume_agent", { agent_id: agentId });
+}
+
+export function sendMarkNotificationRead(notificationId: string) {
+  sendCommand("mark_notification_read", { notification_id: notificationId });
+}
+
+export function sendReadFile(path: string) {
+  sendCommand("read_file", { path });
+}
+
+export function sendEditMessage(messageId: string, content: string) {
+  sendCommand("edit_message", { message_id: messageId, content });
+}
+
+export function sendDeleteMessage(messageId: string) {
+  sendCommand("delete_message", { message_id: messageId });
+}
+
 function handleMessage(data: any) {
   const store = useStore.getState();
 
@@ -158,6 +190,18 @@ function handleMessage(data: any) {
 
     case "task_updated":
       store.updateTask(data.id, data);
+      break;
+
+    case "task_list":
+      if (data.tasks) store.setTasks(data.tasks as Task[]);
+      break;
+
+    case "file_content":
+      if (typeof data.path === "string") store.setFileContent(data.path, data.content ?? "");
+      break;
+
+    case "notification_read":
+      if (data.notification_id) store.markNotificationRead(data.notification_id);
       break;
 
     case "project_created":

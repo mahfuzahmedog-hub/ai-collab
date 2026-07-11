@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useStore } from "@/store";
-import { sendChat } from "@/lib/websocket";
 import { EventCard } from "./EventCard";
 import { ThreadView } from "./ThreadView";
-import { Send, Loader2 } from "lucide-react";
+import { MessageComposer } from "@/features/chat/MessageComposer";
 
 export function Timeline() {
   const messages = useStore((s) => s.messages);
@@ -14,13 +13,14 @@ export function Timeline() {
   const streamingChunk = useStore((s) => s.streamingChunk);
   const activeThread = useStore((s) => s.activeThread);
   const threads = useStore((s) => s.threads);
-  const [input, setInput] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
 
-  // Filter messages by active channel, excluding thread replies
-  const channelMessages = messages.filter(
-    (m) => m.channel === activeChannel && !m.thread_id
-  );
+  // Filter messages by active channel, excluding thread replies.
+  // ponytail: cap the rendered window to the last 300 for perf instead of a
+  // full virtualization dep; upgrade path is react-window if channels get huge.
+  const channelMessages = messages
+    .filter((m) => m.channel === activeChannel && !m.thread_id)
+    .slice(-300);
 
   // Get thread messages for active thread
   const threadMessages = activeThread
@@ -31,19 +31,6 @@ export function Timeline() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [channelMessages, streamingChunk, threadMessages]);
-
-  const handleSend = () => {
-    if (!input.trim()) return;
-    sendChat(input, activeChannel);
-    setInput("");
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
 
   const hasBoss = agents.some((a) => a.role === "boss" || a.role === "coworker");
 
@@ -110,25 +97,11 @@ export function Timeline() {
 
       {/* Input bar */}
       <div className="p-4 border-t border-dark-700 bg-dark-900">
-        <div className="flex items-end gap-2">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={hasBoss ? `Message #${activeChannel}...` : "Create a project first"}
-            disabled={!hasBoss}
-            className="flex-1 bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-white placeholder-dark-500 resize-none focus:outline-none focus:ring-2 focus:ring-primary-500"
-            rows={1}
-            style={{ minHeight: "44px", maxHeight: "120px" }}
-          />
-          <button
-            onClick={handleSend}
-            disabled={!input.trim() || !hasBoss}
-            className="p-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
-          >
-            <Send className="w-5 h-5" />
-          </button>
-        </div>
+        <MessageComposer
+          channel={activeChannel}
+          disabled={!hasBoss}
+          placeholder={hasBoss ? `Message #${activeChannel}...` : "Create a project first"}
+        />
       </div>
     </div>
   );

@@ -19,6 +19,7 @@ export function WorkspaceHeader() {
   const connected = useStore((s) => s.connected);
   const agents = useStore((s) => s.agents);
   const setCommandPaletteOpen = useStore((s) => s.setCommandPaletteOpen);
+  const setNotificationsOpen = useStore((s) => s.setNotificationsOpen);
   const unreadNotifs = useStore((s) => s.notifications.filter((n) => !n.read).length);
 
   // ?tab= is the single source of truth for the active tab
@@ -69,6 +70,7 @@ export function WorkspaceHeader() {
       </div>
 
       <button
+        onClick={() => setNotificationsOpen(true)}
         className="text-dark-400 hover:text-dark-200 transition-colors relative"
         title="Notifications"
       >

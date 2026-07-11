@@ -1,5 +1,8 @@
+"use client";
+
 import type { Agent } from "@/types";
 import { clsx } from "clsx";
+import { useStore } from "@/store";
 
 const statusColors: Record<string, string> = {
   idle: "bg-dark-500",
@@ -28,11 +31,13 @@ const roleIcons: Record<string, string> = {
 };
 
 export function AgentCard({ agent }: { agent: Agent }) {
+  const setActiveAgentProfile = useStore((s) => s.setActiveAgentProfile);
+  const open = () => setActiveAgentProfile(agent.id);
   const isCoworker = agent.role === "boss" || agent.role === "coworker";
 
   if (isCoworker) {
     return (
-      <div className="bg-gradient-to-br from-primary-500/5 to-primary-500/10 border border-primary-500/30 rounded-lg p-4 hover:border-primary-500/50 transition-all col-span-full sm:col-span-2 lg:col-span-1">
+      <div onClick={open} className="cursor-pointer bg-gradient-to-br from-primary-500/5 to-primary-500/10 border border-primary-500/30 rounded-lg p-4 hover:border-primary-500/50 transition-all col-span-full sm:col-span-2 lg:col-span-1">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-full bg-primary-500/20 flex items-center justify-center text-2xl shrink-0 ring-2 ring-primary-500/30">
             🤝
@@ -67,7 +72,7 @@ export function AgentCard({ agent }: { agent: Agent }) {
   }
 
   return (
-    <div className="bg-dark-800 border border-dark-700 rounded-lg p-3 hover:border-dark-500 transition-colors">
+    <div onClick={open} className="cursor-pointer bg-dark-800 border border-dark-700 rounded-lg p-3 hover:border-dark-500 transition-colors">
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-full bg-dark-700 flex items-center justify-center text-lg">
           {roleIcons[agent.role] || "🤖"}
