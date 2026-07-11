@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     llm_default_provider: str = "omniroute"
-    llm_default_model: str = "groq/qwen/qwen3-32b"
+    llm_default_model: str = "auto/cheap"
 
     openai_api_key: Optional[str] = None
     openai_base_url: Optional[str] = None
@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     openrouter_default_model: str = "gryphe/mythomax-l2-13b"
     omniroute_api_key: Optional[str] = None
     omniroute_base_url: str = "https://graduates-differently-curtis-contributor.trycloudflare.com/v1"
-    omniroute_default_model: str = "groq/qwen/qwen3-32b"
+    omniroute_default_model: str = "auto/cheap"
     github_token: Optional[str] = None
     ollama_base_url: str = "http://localhost:11434"
 
