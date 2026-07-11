@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_default_model: str = "gryphe/mythomax-l2-13b"
     omniroute_api_key: Optional[str] = None
-    omniroute_base_url: str = "https://desktop-5903s8a.tail53c303.ts.net/v1"
+    omniroute_base_url: str = "https://graduates-differently-curtis-contributor.trycloudflare.com/v1"
     omniroute_default_model: str = "groq/qwen/qwen3-32b"
     github_token: Optional[str] = None
     ollama_base_url: str = "http://localhost:11434"
