@@ -319,6 +319,16 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
         except Exception as e:
             logger.warning("load ops data failed: %s", e)
 
+        try:
+            from app.db.repository import load_lifecycle_audits
+            audits = await load_lifecycle_audits(project_id)
+            await ws.send_text(json.dumps({
+                "type": "lifecycle_audit_list",
+                "audits": audits,
+            }))
+        except Exception as e:
+            logger.warning("load lifecycle audits failed: %s", e)
+
     elif command == "approve":
         approval_id = args.get("approval_id", "")
         from app.db.repository import get_approval, save_approval, delete_channel, load_project_agents

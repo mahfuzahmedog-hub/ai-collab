@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import (
     AgentModel, MessageModel, TaskModel, ProjectModel, FileModel, ChannelModel,
     ThreadModel, KnowledgeBaseModel, ExecutionLogModel, NotificationModel,
-    ApprovalModel, MemoryModel,
+    ApprovalModel, MemoryModel, LifecycleAuditModel,
 )
 from app.db.session import async_session
 from app.models.agent import Agent, AgentStatus
@@ -654,13 +654,60 @@ async def load_approvals(project_id: str, limit: int = 100) -> list[Approval]:
         ) for r in result.scalars().all()]
 
 
+# ---------- Lifecycle audit ----------
+
+async def save_lifecycle_audit(entry: dict):
+    async with async_session() as s:
+        s.add(LifecycleAuditModel(
+            project_id=entry.get("project_id", ""),
+            agent_id=entry.get("agent_id"),
+            agent_name=entry.get("agent_name", ""),
+            from_state=entry.get("from_state", ""),
+            to_state=entry.get("to_state", ""),
+            reason=entry.get("reason", ""),
+        ))
+        await s.commit()
+
+
+async def load_lifecycle_audits(project_id: str, limit: int = 200) -> list[dict]:
+    async with async_session() as s:
+        result = await s.execute(
+            select(LifecycleAuditModel)
+            .where(LifecycleAuditModel.project_id == project_id)
+            .order_by(LifecycleAuditModel.created_at.desc())
+            .limit(limit)
+        )
+        return [
+            {
+                "id": r.id,
+                "project_id": r.project_id,
+                "agent_id": r.agent_id,
+                "agent_name": r.agent_name or "",
+                "from_state": r.from_state or "",
+                "to_state": r.to_state or "",
+                "reason": r.reason or "",
+                "created_at": r.created_at.isoformat() + "Z" if r.created_at else "",
+            }
+            for r in result.scalars().all()
+        ]
+
+
 # ---------- Memory ----------
 
 async def save_memory(m: Memory):
+    embedding_json = None
+    try:
+        from app.core.embedding import get_embedding
+        emb = await get_embedding(m.content)
+        embedding_json = json.dumps(emb)
+        m.embedding = emb
+    except Exception:
+        pass
     async with async_session() as s:
         s.add(MemoryModel(
             id=m.id, project_id=m.project_id, agent_id=m.agent_id,
             scope=m.scope, type=m.type, content=m.content, tags=m.tags,
+            embedding=embedding_json,
         ))
         await s.commit()
 
@@ -676,5 +723,24 @@ async def load_memories(project_id: str, agent_id: Optional[str] = None, limit: 
             id=r.id, project_id=r.project_id, agent_id=r.agent_id,
             scope=r.scope or "project", type=r.type or "fact",
             content=r.content, tags=r.tags or [],
+            embedding=json.loads(r.embedding) if r.embedding else None,
             created_at=(r.created_at.isoformat() + "Z") if r.created_at else "",
         ) for r in result.scalars().all()]
+
+
+async def search_memories(project_id: str, query: str, limit: int = 10, agent_id: Optional[str] = None) -> list[Memory]:
+    memories = await load_memories(project_id, agent_id, limit=500)
+    if not memories:
+        return []
+    try:
+        from app.core.embedding import get_embedding, cosine_similarity
+        query_emb = await get_embedding(query)
+    except Exception:
+        query_lower = query.lower()
+        return [m for m in memories if query_lower in m.content.lower()][:limit]
+    scored = [(cosine_similarity(query_emb, m.embedding), m) for m in memories if m.embedding]
+    scored.sort(key=lambda x: x[0], reverse=True)
+    if scored:
+        return [m for _, m in scored[:limit]]
+    query_lower = query.lower()
+    return [m for m in memories if query_lower in m.content.lower()][:limit]

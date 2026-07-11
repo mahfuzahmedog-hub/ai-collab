@@ -9,16 +9,42 @@ def utcnow_str() -> str:
 
 
 class AgentStatus(str, enum.Enum):
+    creating = "creating"
+    initializing = "initializing"
     idle = "idle"
+    assigned = "assigned"
+    planning = "planning"
+    waiting_for_dependencies = "waiting_for_dependencies"
+    researching = "researching"
     thinking = "thinking"
     working = "working"
-    waiting = "waiting"
-    blocked = "blocked"
+    collaborating = "collaborating"
     reviewing = "reviewing"
+    awaiting_user_approval = "awaiting_user_approval"
+    approved = "approved"
+    executing = "executing"
     testing = "testing"
+    completed = "completed"
+    archived = "archived"
+    blocked = "blocked"
+    paused = "paused"
+    retrying = "retrying"
+    failed = "failed"
     error = "error"
     retired = "retired"
-    done = "done"
+
+
+PRESENCE_MAP = {
+    AgentStatus.idle: "😴",
+    AgentStatus.thinking: "🧠",
+    AgentStatus.working: "💻",
+    AgentStatus.researching: "🔍",
+    AgentStatus.collaborating: "🤝",
+    AgentStatus.reviewing: "📝",
+    AgentStatus.waiting_for_dependencies: "⏸️",
+    AgentStatus.blocked: "🚫",
+    AgentStatus.error: "❌",
+}
 
 
 class Agent(BaseModel):

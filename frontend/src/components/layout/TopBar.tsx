@@ -1,7 +1,7 @@
 "use client";
 
 import { useStore } from "@/store";
-import { Search, Bell, Settings, HelpCircle } from "lucide-react";
+import { Search, Bell, TrendingUp, HelpCircle } from "lucide-react";
 import { clsx } from "clsx";
 
 export function TopBar() {
@@ -41,9 +41,9 @@ export function TopBar() {
         )}
       </button>
 
-      <button className="text-dark-400 hover:text-dark-200 transition-colors" title="Settings">
-        <Settings size={16} />
-      </button>
+      <a href="/dashboard" className="text-dark-400 hover:text-dark-200 transition-colors" title="Dashboard">
+        <TrendingUp size={16} />
+      </a>
     </header>
   );
 }

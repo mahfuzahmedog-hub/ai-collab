@@ -193,6 +193,18 @@ class ApprovalModel(Base):
     resolved_at = Column(DateTime, nullable=True)
 
 
+class LifecycleAuditModel(Base):
+    __tablename__ = "lifecycle_audit"
+    id = Column(String, primary_key=True, default=gen_id)
+    project_id = Column(String, nullable=False, index=True)
+    agent_id = Column(String, nullable=True, index=True)
+    agent_name = Column(String(255), default="")
+    from_state = Column(String(50), default="")
+    to_state = Column(String(50), default="")
+    reason = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class MemoryModel(Base):
     __tablename__ = "memories"
     id = Column(String, primary_key=True, default=gen_id)
@@ -202,4 +214,5 @@ class MemoryModel(Base):
     type = Column(String(50), default="fact")  # conversation, decision, fact, code, document
     content = Column(Text, nullable=False)
     tags = Column(JSON, default=list)
+    embedding = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

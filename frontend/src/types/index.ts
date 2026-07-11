@@ -22,8 +22,11 @@ export interface Agent {
 }
 
 export type AgentStatus =
-  | "idle" | "thinking" | "working" | "waiting"
-  | "blocked" | "reviewing" | "testing" | "error" | "retired" | "done";
+  | "creating" | "initializing" | "idle" | "assigned" | "planning"
+  | "waiting_for_dependencies" | "researching" | "thinking" | "working"
+  | "collaborating" | "reviewing" | "awaiting_user_approval" | "approved"
+  | "executing" | "testing" | "completed" | "archived" | "blocked" | "paused"
+  | "retrying" | "failed" | "error" | "retired";
 
 export interface Task {
   id: string;
@@ -164,6 +167,17 @@ export interface Approval {
   description: string;
   payload: Record<string, any>;
   status: "pending" | "approved" | "rejected";
+  created_at: string;
+}
+
+export interface LifecycleAudit {
+  id: string;
+  project_id: string;
+  agent_id?: string | null;
+  agent_name: string;
+  from_state: string;
+  to_state: string;
+  reason: string;
   created_at: string;
 }
 

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Agent, Task, Message, Project, AgentStatus, Channel, FileNode, Thread, ExecutionLog, Notification, Approval } from "@/types";
+import type { Agent, Task, Message, Project, AgentStatus, Channel, FileNode, Thread, ExecutionLog, Notification, Approval, LifecycleAudit } from "@/types";
 
 interface AppState {
   // Project state
@@ -30,6 +30,7 @@ interface AppState {
   executionLogs: ExecutionLog[];
   notifications: Notification[];
   approvals: Approval[];
+  lifecycleAudits: LifecycleAudit[];
 
   // Streaming
   streamingChunk: { agentId: string; content: string; done: boolean } | null;
@@ -74,6 +75,8 @@ interface AppState {
   markNotificationRead: (id: string) => void;
   setApprovals: (a: Approval[]) => void;
   upsertApproval: (a: Approval) => void;
+  setLifecycleAudits: (a: LifecycleAudit[]) => void;
+  addLifecycleAudit: (a: LifecycleAudit) => void;
   setStreamingChunk: (chunk: { agentId: string; content: string; done: boolean } | null) => void;
   setConnected: (c: boolean) => void;
   setActiveTab: (t: string) => void;
@@ -109,6 +112,7 @@ export const useStore = create<AppState>((set) => ({
   executionLogs: [],
   notifications: [],
   approvals: [],
+  lifecycleAudits: [],
   streamingChunk: null,
   connected: false,
   activeTab: "workspace",
@@ -180,6 +184,8 @@ export const useStore = create<AppState>((set) => ({
         ? s.approvals.map((x) => (x.id === a.id ? a : x))
         : [a, ...s.approvals],
     })),
+  setLifecycleAudits: (a) => set({ lifecycleAudits: a }),
+  addLifecycleAudit: (a) => set((s) => ({ lifecycleAudits: [a, ...s.lifecycleAudits].slice(0, 500) })),
   setStreamingChunk: (chunk) => set({ streamingChunk: chunk }),
   setConnected: (c) => set({ connected: c }),
   setActiveTab: (t) => set({ activeTab: t }),
@@ -198,6 +204,7 @@ export const useStore = create<AppState>((set) => ({
       executionLogs: [],
       notifications: [],
       approvals: [],
+      lifecycleAudits: [],
       streamingChunk: null,
     }),
 }));

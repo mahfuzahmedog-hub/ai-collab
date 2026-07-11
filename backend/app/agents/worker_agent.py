@@ -22,7 +22,8 @@ class WorkerAgent(BaseAgent):
     def assign_task(self, task: Task):
         self.current_task = task
         self.agent.current_task_id = task.id
-        self.status = AgentStatus.working
+        asyncio.create_task(self.set_status(AgentStatus.assigned, f"Assigned task: {task.title}"))
+        asyncio.create_task(self.set_status(AgentStatus.working, f"Working on task: {task.title}"))
 
     def _parse_actions(self, text: str) -> list[dict]:
         matches = re.findall(r'\[ACTION\](.*?)\[/ACTION\]', text, re.DOTALL)
@@ -120,7 +121,7 @@ Please work on this task now. Think through the approach, implement the solution
         old_task = self.current_task
         self.current_task = None
         self.agent.current_task_id = None
-        self.status = AgentStatus.idle
+        asyncio.create_task(self.set_status(AgentStatus.idle, "Task completed"))
 
         return clean_result
 
@@ -157,7 +158,7 @@ As a {self.agent.role} with skills in {', '.join(self.agent.skills)}, please pro
             msg_type="task_update",
             channel=self.agent.channel,
         )
-        self.status = AgentStatus.blocked
+        asyncio.create_task(self.set_status(AgentStatus.blocked, issue))
 
     async def handle_direct_message(self, project_id: str, user_message: str):
         prompt = f"""The user has sent you a direct message:

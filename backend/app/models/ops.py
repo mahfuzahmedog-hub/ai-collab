@@ -64,4 +64,5 @@ class Memory(BaseModel):
     type: str = "fact"
     content: str
     tags: list[str] = Field(default_factory=list)
+    embedding: Optional[list[float]] = None
     created_at: str = Field(default_factory=_utcnow)

@@ -9,3 +9,5 @@ pydantic-settings
 httpx
 python-multipart
 asyncpg
+pgvector
+playwright

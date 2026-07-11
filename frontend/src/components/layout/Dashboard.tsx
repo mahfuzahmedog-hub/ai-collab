@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useStore } from "@/store";
 import {
   Bot,
@@ -8,6 +9,7 @@ import {
   Play,
   TrendingUp,
   Clock,
+  Activity,
 } from "lucide-react";
 
 const cards = [
@@ -21,8 +23,10 @@ export function Dashboard() {
   const agents = useStore((s) => s.agents);
   const tasks = useStore((s) => s.tasks);
   const logs = useStore((s) => s.executionLogs);
+  const audits = useStore((s) => s.lifecycleAudits);
+  const [showLifecycle, setShowLifecycle] = useState(false);
 
-  const online = agents.filter((a) => a.status !== "idle" && a.status !== "done").length;
+  const online = agents.filter((a) => a.status !== "idle" && a.status !== "retired" && a.status !== "archived").length;
   const running = tasks.filter((t) => t.status === "working" || t.status === "planning" || t.status === "assigned").length;
   const completed = tasks.filter((t) => t.status === "completed").length;
   const blocked = tasks.filter((t) => t.status === "blocked").length;
@@ -92,6 +96,31 @@ export function Dashboard() {
             </div>
           </div>
         )}
+
+        <div className="bg-dark-900/60 border border-dark-700/50 rounded-lg">
+          <button
+            onClick={() => setShowLifecycle(!showLifecycle)}
+            className="w-full flex items-center gap-1.5 p-3 text-left"
+          >
+            <Activity size={12} className="text-dark-400" />
+            <h4 className="text-[10px] font-semibold text-dark-300 uppercase tracking-wider">Lifecycle</h4>
+            <span className="ml-auto text-dark-500 text-[10px]">{audits.length}</span>
+          </button>
+          {showLifecycle && (
+            <div className="max-h-40 overflow-y-auto px-3 pb-3 space-y-1">
+              {audits.slice(0, 30).map((a) => (
+                <div key={a.id} className="text-[10px] text-dark-400 border-t border-dark-700/30 pt-1">
+                  <span className="text-white">{a.agent_name}</span>
+                  <span className="text-dark-500">: {a.from_state} → {a.to_state}</span>
+                  {a.reason && <div className="truncate text-dark-500">{a.reason}</div>}
+                </div>
+              ))}
+              {audits.length === 0 && (
+                <div className="text-[10px] text-dark-500">No state transitions yet.</div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </aside>
   );

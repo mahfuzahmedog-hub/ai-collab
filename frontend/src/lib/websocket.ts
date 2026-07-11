@@ -1,4 +1,4 @@
-import type { Agent, Task, Message, Project, Channel, FileNode, Thread, ExecutionLog, Notification, Approval } from "@/types";
+import type { Agent, Task, Message, Project, Channel, FileNode, Thread, ExecutionLog, Notification, Approval, LifecycleAudit, AgentStatus } from "@/types";
 import { useStore } from "@/store";
 
 let ws: WebSocket | null = null;
@@ -238,6 +238,17 @@ function handleMessage(data: any) {
 
     case "execution_log":
       store.addExecutionLog(data as unknown as ExecutionLog);
+      break;
+
+    case "lifecycle_state_changed":
+      if (data.agent_id && data.to_state) {
+        store.updateAgentStatus(data.agent_id, data.to_state as AgentStatus);
+        store.addLifecycleAudit(data as unknown as LifecycleAudit);
+      }
+      break;
+
+    case "lifecycle_audit_list":
+      if (data.audits) store.setLifecycleAudits(data.audits as LifecycleAudit[]);
       break;
 
     case "notification_list":

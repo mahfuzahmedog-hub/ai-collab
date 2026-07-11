@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useStore } from "@/store";
 import { FileText, Folder, Bot, Loader2, Code } from "lucide-react";
-import type { FileNode } from "@/types";
+import type { FileNode, AgentStatus } from "@/types";
 
 interface FileTreeProps {
   files: FileNode[];
@@ -95,6 +95,19 @@ function FileTree() {
   );
 }
 
+const PRESENCE_EMOJI: Record<string, string> = {
+  idle: "😴",
+  thinking: "🧠",
+  working: "💻",
+  researching: "🔍",
+  collaborating: "🤝",
+  reviewing: "📝",
+  waiting_for_dependencies: "⏸️",
+  blocked: "🚫",
+  error: "❌",
+  retired: "👋",
+};
+
 function AgentList() {
   const agents = useStore((s) => s.agents);
 
@@ -128,7 +141,7 @@ function AgentList() {
                 <div className="font-medium text-white">{boss.name}</div>
                 <div className="text-xs text-primary-400">Engineering Manager</div>
               </div>
-              <div className={`w-2 h-2 rounded-full ${boss.status === "thinking" ? "bg-yellow-400 animate-pulse" : boss.status === "working" ? "bg-blue-400" : "bg-green-500"}`} />
+              <div className="text-lg" title={boss.status}>{PRESENCE_EMOJI[boss.status] || "🤖"}</div>
             </div>
             {boss.status === "thinking" && <div className="mt-2 text-xs text-yellow-400">Thinking...</div>}
           </div>
@@ -143,7 +156,7 @@ function AgentList() {
                 <div className="font-medium text-white truncate">{worker.name}</div>
                 <div className="text-xs text-dark-400 capitalize">{worker.role.replace("_", " ")}</div>
               </div>
-              <div className={`w-2 h-2 rounded-full ${worker.status === "working" ? "bg-blue-400" : worker.status === "thinking" ? "bg-yellow-400 animate-pulse" : worker.status === "blocked" ? "bg-red-500" : "bg-green-500"}`} />
+              <div className="text-lg" title={worker.status}>{PRESENCE_EMOJI[worker.status] || "🤖"}</div>
             </div>
             {worker.current_task_id && (
               <div className="mt-2 text-xs text-dark-400 bg-dark-700 px-2 py-1 rounded">

@@ -437,6 +437,19 @@ You are successful when:
 * The user always feels like they are working alongside an intelligent, trustworthy coworker—not managing a confusing collection of bots."""
 
 
+INSTRUCTION_PATTERN = re.compile(r'\[INSTRUCTION\](.*?)\[/INSTRUCTION\]', re.DOTALL)
+
+
+INSTRUCTION_PROTOCOL = """
+
+---
+
+## Direct Instructions
+
+The user may send [INSTRUCTION] blocks like [INSTRUCTION]{"type":"create_agent","name":"Bob","role":"researcher"}[/INSTRUCTION]. When you see one, execute it immediately and confirm. Do not ask for permission.
+"""
+
+
 ACTION_PROTOCOL = """
 
 ---
@@ -485,6 +498,9 @@ Remember a durable fact:
 Create and assign a task to an existing agent (assign_to is the agent's name):
 [ACTION]{"type":"create_task","title":"Build login API","description":"...","priority":"high","assign_to":"Ada"}[/ACTION]
 
+Execute a tool (browser, code execution, HTTP, GitHub, web search, etc.). The result is shown to the user:
+[ACTION]{"type":"execute_tool","name":"web_search","params":{"query":"latest AI news"}}[/ACTION]
+
 Evolve an existing agent — add skills, change personality/mission/channel (version auto-bumps):
 [ACTION]{"type":"evolve_agent","agent_id":"agent-xxxx","skills":["new-skill"],"personality":"updated","mission":"new mission","channel":"backend"}[/ACTION]
 
@@ -513,7 +529,7 @@ class CoworkerAgent(BaseAgent):
         self._event_handlers = []
 
     def _system_prompt(self) -> str:
-        return COWORKER_SYSTEM_PROMPT + ACTION_PROTOCOL
+        return COWORKER_SYSTEM_PROMPT + ACTION_PROTOCOL + INSTRUCTION_PROTOCOL
 
     async def initialize_workspace(self, project: Project):
         self.project = project
@@ -523,6 +539,15 @@ class CoworkerAgent(BaseAgent):
 
     def _parse_actions(self, text: str) -> list[dict]:
         return super()._parse_actions(text)
+
+    def _parse_instructions(self, text: str) -> list[dict]:
+        actions = []
+        for match in INSTRUCTION_PATTERN.finditer(text):
+            try:
+                actions.append(json.loads(match.group(1).strip()))
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse instruction: %s", match.group(1)[:100])
+        return actions
 
     async def _require_approval(self, action: dict, channel: str) -> bool:
         """Return True if the action needs approval and was deferred."""
@@ -676,6 +701,7 @@ class CoworkerAgent(BaseAgent):
             agent_id = action.get("agent_id", "")
             if agent_id in self.team:
                 removed = self.team.pop(agent_id)
+                await removed.set_status(AgentStatus.retired, "Agent retired")
                 self.project.agent_ids = [aid for aid in self.project.agent_ids if aid != agent_id]
                 await event_bus.publish("agent_removed", {
                     "agent_id": agent_id,
@@ -706,6 +732,9 @@ class CoworkerAgent(BaseAgent):
                 if "facts" not in self.agent.memory:
                     self.agent.memory["facts"] = {}
                 self.agent.memory["facts"][key] = value
+        elif t == "execute_tool":
+            result = await self.execute_tool(action.get("name", ""), action.get("params", {}))
+            await self.send_message(self.project.id, f"Tool '{action.get('name')}' result:\n{result}", channel=channel)
         elif t == "create_task":
             assign_to = action.get("assign_to", "")
             assigned_role = None
@@ -729,6 +758,16 @@ class CoworkerAgent(BaseAgent):
             )
 
     async def handle_user_request(self, project_id: str, user_message: str, channel: str = "general"):
+        # Check for [INSTRUCTION] blocks (direct commands, bypass LLM)
+        instruction_actions = self._parse_instructions(user_message)
+        if instruction_actions:
+            clean_msg = re.sub(r'\[INSTRUCTION\].*?\[/INSTRUCTION\]', '', user_message, flags=re.DOTALL).strip()
+            for action in instruction_actions:
+                await self._execute_action(action, channel)
+            if clean_msg:
+                await self.send_message(project_id, clean_msg, channel=channel)
+            return
+
         team_info = ', '.join(f'{a.name} ({a.role})' for a in self.team.values()) if self.team else 'No team yet'
         prompt = f"""The user sent a message in channel #{channel}:
 {user_message}
@@ -769,6 +808,8 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
                 provider=settings.llm_default_provider,
             )
             worker = WorkerAgent(agent_model)
+            await worker.set_status(AgentStatus.initializing, "Agent created")
+            await worker.set_status(AgentStatus.idle, "Agent initialized")
             self.team[agent_model.id] = worker
             self.project.agent_ids.append(agent_model.id)
             asyncio.create_task(save_agent(agent_model))
