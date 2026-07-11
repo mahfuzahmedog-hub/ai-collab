@@ -55,6 +55,19 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                     await event_bus.publish("message", msg)
                     asyncio.create_task(save_message(Message(**msg)))
 
+                    # Create notification for @mentions
+                    if data.get("mentions"):
+                        from app.db.repository import save_notification
+                        from app.models.ops import Notification
+                        for mention in data["mentions"]:
+                            n = Notification(
+                                project_id=project_id, type="mention",
+                                title=f"@{sender} mentioned you",
+                                body=content[:200], link=f"channel://{channel}",
+                            )
+                            asyncio.create_task(save_notification(n))
+                            await event_bus.publish("notification", n.model_dump())
+
                     if channel.startswith("dm-"):
                         agent_name = channel[3:]
                         found = False
@@ -126,6 +139,28 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
                 "message": f"Failed to create project: {e}",
             }))
 
+    elif command == "archive_project":
+        proj = await load_project(project_id)
+        if proj:
+            proj.status = "cancelled"
+            asyncio.create_task(save_project(proj))
+            await ws_manager.broadcast(project_id, {"type": "project_updated", "project": proj.model_dump()})
+
+    elif command == "delete_project":
+        proj = await load_project(project_id)
+        if proj:
+            proj.status = "cancelled"
+            proj.title += " (deleted)"
+            asyncio.create_task(save_project(proj))
+            await ws_manager.broadcast(project_id, {"type": "project_updated", "project": proj.model_dump()})
+
+    elif command == "update_project_tags":
+        proj = await load_project(project_id)
+        if proj:
+            proj.tags = args.get("tags", [])
+            asyncio.create_task(save_project(proj))
+            await ws_manager.broadcast(project_id, {"type": "project_updated", "project": proj.model_dump()})
+
     elif command == "delegate":
         task_title = args.get("task", "")
         role = args.get("role", "")
@@ -165,6 +200,19 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
         from app.db.repository import save_channel
         asyncio.create_task(save_channel(ch))
         await event_bus.publish("channel_created", {**ch.model_dump(), "channel_type": ch.type})
+
+    elif command == "edit_message":
+        msg_id = args.get("message_id", "")
+        content = args.get("content", "")
+        from app.db.repository import update_message_content
+        if msg_id and content and await update_message_content(project_id, msg_id, content):
+            await ws_manager.broadcast(project_id, {"type": "message_edited", "message_id": msg_id, "content": content})
+
+    elif command == "delete_message":
+        msg_id = args.get("message_id", "")
+        from app.db.repository import delete_message
+        if msg_id and await delete_message(project_id, msg_id):
+            await ws_manager.broadcast(project_id, {"type": "message_deleted", "message_id": msg_id})
 
     elif command == "create_thread":
         from app.models.thread import Thread
@@ -250,6 +298,60 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             }))
         except Exception as e:
             logger.warning("load channels/threads failed: %s", e)
+
+        try:
+            from app.db.repository import load_execution_logs, load_notifications, load_approvals
+            logs = await load_execution_logs(project_id)
+            await ws.send_text(json.dumps({
+                "type": "execution_logs",
+                "logs": [l.model_dump() for l in logs],
+            }))
+            notifs = await load_notifications(project_id)
+            await ws.send_text(json.dumps({
+                "type": "notification_list",
+                "notifications": [n.model_dump() for n in notifs],
+            }))
+            approvals = await load_approvals(project_id)
+            await ws.send_text(json.dumps({
+                "type": "approval_list",
+                "approvals": [a.model_dump() for a in approvals],
+            }))
+        except Exception as e:
+            logger.warning("load ops data failed: %s", e)
+
+    elif command == "approve":
+        approval_id = args.get("approval_id", "")
+        from app.db.repository import get_approval, save_approval, delete_channel, load_project_agents
+        from app.models.ops import Approval
+        a = await get_approval(approval_id)
+        if a and a.status == "pending":
+            a.status = "approved"
+            await save_approval(a)
+            await event_bus.publish("approval_updated", a.model_dump())
+            # Execute the approved action
+            payload = a.payload or {}
+            atype = payload.get("type")
+            if atype == "delete_channel":
+                cid = payload.get("id") or payload.get("channel") or ""
+                if cid:
+                    deleted = await delete_channel(project_id, cid)
+                    await event_bus.publish("channel_deleted", {"project_id": project_id, "ids": deleted})
+            elif atype == "retire_agent":
+                aid = payload.get("agent_id", "")
+                if aid and agent_manager.boss and aid in agent_manager.boss.team:
+                    removed = agent_manager.boss.team.pop(aid, None)
+                    if removed:
+                        await event_bus.publish("agent_removed", {"agent_id": aid, "project_id": project_id})
+        await ws.send_text(json.dumps({"type": "approval_updated", **a.model_dump()} if a else {}))
+
+    elif command == "reject":
+        approval_id = args.get("approval_id", "")
+        from app.db.repository import get_approval, save_approval
+        a = await get_approval(approval_id)
+        if a and a.status == "pending":
+            a.status = "rejected"
+            await save_approval(a)
+            await event_bus.publish("approval_updated", a.model_dump())
 
     elif command == "switch_project":
         new_project_id = args.get("project_id", "")

@@ -33,6 +33,9 @@ class AgentModel(Base):
     version = Column(String(50), default="1.0")
     is_permanent = Column(Boolean, default=False)
     channel = Column(String(255), default="general")
+    emoji = Column(String(50), default="")
+    color = Column(String(50), default="")
+    max_tokens = Column(Integer, default=4096)
 
 
 class ProjectModel(Base):
@@ -49,6 +52,7 @@ class ProjectModel(Base):
     requirements = Column(Text, default="")
     deliverables = Column(JSON, default=list)
     knowledge_base = Column(JSON, default=dict)
+    tags = Column(JSON, default=list)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -140,3 +144,62 @@ class KnowledgeBaseModel(Base):
     entries = Column(JSON, default=dict)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ExecutionLogModel(Base):
+    __tablename__ = "execution_logs"
+    id = Column(String, primary_key=True, default=gen_id)
+    project_id = Column(String, nullable=False, index=True)
+    agent_id = Column(String, nullable=True)
+    agent_name = Column(String(255), default="")
+    action = Column(String(100), default="llm_call")
+    model = Column(String(100), default="")
+    provider = Column(String(50), default="")
+    status = Column(String(50), default="completed")  # started, completed, failed
+    input_tokens = Column(Integer, default=0)
+    output_tokens = Column(Integer, default=0)
+    total_tokens = Column(Integer, default=0)
+    cost_usd = Column(Float, default=0.0)
+    latency_ms = Column(Integer, default=0)
+    input_preview = Column(Text, default="")
+    output_preview = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class NotificationModel(Base):
+    __tablename__ = "notifications"
+    id = Column(String, primary_key=True, default=gen_id)
+    project_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, default="user", index=True)
+    type = Column(String(50), default="system")  # mention, task, approval, system
+    title = Column(String(255), default="")
+    body = Column(Text, default="")
+    link = Column(String(255), nullable=True)
+    read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ApprovalModel(Base):
+    __tablename__ = "approvals"
+    id = Column(String, primary_key=True, default=gen_id)
+    project_id = Column(String, nullable=False, index=True)
+    agent_id = Column(String, nullable=True)
+    agent_name = Column(String(255), default="")
+    action = Column(String(100), default="")
+    description = Column(Text, default="")
+    payload = Column(JSON, default=dict)
+    status = Column(String(50), default="pending")  # pending, approved, rejected
+    created_at = Column(DateTime, default=datetime.utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+
+
+class MemoryModel(Base):
+    __tablename__ = "memories"
+    id = Column(String, primary_key=True, default=gen_id)
+    project_id = Column(String, nullable=False, index=True)
+    agent_id = Column(String, nullable=True, index=True)
+    scope = Column(String(50), default="project")  # project, agent, user
+    type = Column(String(50), default="fact")  # conversation, decision, fact, code, document
+    content = Column(Text, nullable=False)
+    tags = Column(JSON, default=list)
+    created_at = Column(DateTime, default=datetime.utcnow)

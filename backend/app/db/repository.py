@@ -6,7 +6,11 @@ from typing import Optional
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AgentModel, MessageModel, TaskModel, ProjectModel, FileModel, ChannelModel, ThreadModel, KnowledgeBaseModel
+from app.db.models import (
+    AgentModel, MessageModel, TaskModel, ProjectModel, FileModel, ChannelModel,
+    ThreadModel, KnowledgeBaseModel, ExecutionLogModel, NotificationModel,
+    ApprovalModel, MemoryModel,
+)
 from app.db.session import async_session
 from app.models.agent import Agent, AgentStatus
 from app.models.task import Task, TaskStatus, TaskPriority
@@ -14,6 +18,7 @@ from app.models.message import Message
 from app.models.project import Project
 from app.models.channel import Channel
 from app.models.thread import Thread
+from app.models.ops import ExecutionLog, Notification, Approval, Memory
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +40,9 @@ async def save_agent(agent: Agent):
             "version": agent.version,
             "is_permanent": agent.is_permanent,
             "channel": agent.channel,
+            "emoji": agent.emoji,
+            "color": agent.color,
+            "max_tokens": agent.max_tokens,
             "status": agent.status.value if hasattr(agent.status, "value") else agent.status,
             "current_task_id": agent.current_task_id,
             "skills": agent.skills,
@@ -71,6 +79,9 @@ async def load_agent(agent_id: str) -> Optional[Agent]:
             version=row.version or "1.0",
             is_permanent=row.is_permanent or False,
             channel=getattr(row, "channel", None) or "general",
+            emoji=getattr(row, "emoji", None) or "",
+            color=getattr(row, "color", None) or "",
+            max_tokens=getattr(row, "max_tokens", None) or 4096,
             status=AgentStatus(row.status),
             current_task_id=row.current_task_id,
             skills=row.skills or [],
@@ -101,6 +112,9 @@ async def load_project_agents(project_id: str) -> list[Agent]:
                 version=row.version or "1.0",
                 is_permanent=row.is_permanent or False,
                 channel=getattr(row, "channel", None) or "general",
+                emoji=getattr(row, "emoji", None) or "",
+                color=getattr(row, "color", None) or "",
+                max_tokens=getattr(row, "max_tokens", None) or 4096,
                 status=AgentStatus(row.status),
                 current_task_id=row.current_task_id,
                 skills=row.skills or [],
@@ -472,3 +486,195 @@ async def load_knowledge_base(project_id: str, name: str) -> dict:
         result = await s.execute(stmt)
         row = result.scalar_one_or_none()
         return row.entries if row else {}
+
+
+# ---------- Message edit / delete ----------
+
+async def update_message_content(project_id: str, message_id: str, content: str) -> bool:
+    async with async_session() as s:
+        row = (await s.execute(
+            select(MessageModel).where(
+                MessageModel.id == message_id,
+                MessageModel.project_id == project_id,
+            )
+        )).scalar_one_or_none()
+        if not row:
+            return False
+        row.content = content
+        await s.commit()
+        return True
+
+
+async def delete_message(project_id: str, message_id: str) -> bool:
+    async with async_session() as s:
+        result = await s.execute(
+            select(MessageModel).where(
+                MessageModel.id == message_id,
+                MessageModel.project_id == project_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if not row:
+            return False
+        await s.delete(row)
+        await s.commit()
+        return True
+
+
+# ---------- Execution logs (observability) ----------
+
+async def save_execution_log(log: ExecutionLog):
+    async with async_session() as s:
+        s.add(ExecutionLogModel(
+            id=log.id, project_id=log.project_id, agent_id=log.agent_id,
+            agent_name=log.agent_name, action=log.action, model=log.model,
+            provider=log.provider, status=log.status,
+            input_tokens=log.input_tokens, output_tokens=log.output_tokens,
+            total_tokens=log.total_tokens, cost_usd=log.cost_usd,
+            latency_ms=log.latency_ms, input_preview=log.input_preview,
+            output_preview=log.output_preview,
+        ))
+        await s.commit()
+
+
+async def load_execution_logs(project_id: str, limit: int = 200) -> list[ExecutionLog]:
+    async with async_session() as s:
+        result = await s.execute(
+            select(ExecutionLogModel)
+            .where(ExecutionLogModel.project_id == project_id)
+            .order_by(ExecutionLogModel.created_at.desc())
+            .limit(limit)
+        )
+        out = []
+        for r in result.scalars().all():
+            out.append(ExecutionLog(
+                id=r.id, project_id=r.project_id, agent_id=r.agent_id,
+                agent_name=r.agent_name or "", action=r.action or "llm_call",
+                model=r.model or "", provider=r.provider or "", status=r.status or "completed",
+                input_tokens=r.input_tokens or 0, output_tokens=r.output_tokens or 0,
+                total_tokens=r.total_tokens or 0, cost_usd=r.cost_usd or 0.0,
+                latency_ms=r.latency_ms or 0, input_preview=r.input_preview or "",
+                output_preview=r.output_preview or "",
+                created_at=(r.created_at.isoformat() + "Z") if r.created_at else "",
+            ))
+        return out
+
+
+# ---------- Notifications ----------
+
+async def save_notification(n: Notification):
+    async with async_session() as s:
+        s.add(NotificationModel(
+            id=n.id, project_id=n.project_id, user_id=n.user_id, type=n.type,
+            title=n.title, body=n.body, link=n.link, read=n.read,
+        ))
+        await s.commit()
+
+
+async def load_notifications(project_id: str, limit: int = 100) -> list[Notification]:
+    async with async_session() as s:
+        result = await s.execute(
+            select(NotificationModel)
+            .where(NotificationModel.project_id == project_id)
+            .order_by(NotificationModel.created_at.desc())
+            .limit(limit)
+        )
+        return [Notification(
+            id=r.id, project_id=r.project_id, user_id=r.user_id or "user",
+            type=r.type or "system", title=r.title or "", body=r.body or "",
+            link=r.link, read=bool(r.read),
+            created_at=(r.created_at.isoformat() + "Z") if r.created_at else "",
+        ) for r in result.scalars().all()]
+
+
+async def mark_notification_read(project_id: str, notification_id: str) -> bool:
+    async with async_session() as s:
+        result = await s.execute(
+            select(NotificationModel).where(
+                NotificationModel.id == notification_id,
+                NotificationModel.project_id == project_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if not row:
+            return False
+        row.read = True
+        await s.commit()
+        return True
+
+
+# ---------- Approvals ----------
+
+async def save_approval(a: Approval):
+    async with async_session() as s:
+        existing = (await s.execute(
+            select(ApprovalModel).where(ApprovalModel.id == a.id)
+        )).scalar_one_or_none()
+        if existing:
+            existing.status = a.status
+            existing.resolved_at = datetime.utcnow() if a.status != "pending" else None
+        else:
+            s.add(ApprovalModel(
+                id=a.id, project_id=a.project_id, agent_id=a.agent_id,
+                agent_name=a.agent_name, action=a.action, description=a.description,
+                payload=a.payload, status=a.status,
+            ))
+        await s.commit()
+
+
+async def get_approval(approval_id: str) -> Optional[Approval]:
+    async with async_session() as s:
+        row = (await s.execute(
+            select(ApprovalModel).where(ApprovalModel.id == approval_id)
+        )).scalar_one_or_none()
+        if not row:
+            return None
+        return Approval(
+            id=row.id, project_id=row.project_id, agent_id=row.agent_id,
+            agent_name=row.agent_name or "", action=row.action or "",
+            description=row.description or "", payload=row.payload or {},
+            status=row.status or "pending",
+        )
+
+
+async def load_approvals(project_id: str, limit: int = 100) -> list[Approval]:
+    async with async_session() as s:
+        result = await s.execute(
+            select(ApprovalModel)
+            .where(ApprovalModel.project_id == project_id)
+            .order_by(ApprovalModel.created_at.desc())
+            .limit(limit)
+        )
+        return [Approval(
+            id=r.id, project_id=r.project_id, agent_id=r.agent_id,
+            agent_name=r.agent_name or "", action=r.action or "",
+            description=r.description or "", payload=r.payload or {},
+            status=r.status or "pending",
+            created_at=(r.created_at.isoformat() + "Z") if r.created_at else "",
+        ) for r in result.scalars().all()]
+
+
+# ---------- Memory ----------
+
+async def save_memory(m: Memory):
+    async with async_session() as s:
+        s.add(MemoryModel(
+            id=m.id, project_id=m.project_id, agent_id=m.agent_id,
+            scope=m.scope, type=m.type, content=m.content, tags=m.tags,
+        ))
+        await s.commit()
+
+
+async def load_memories(project_id: str, agent_id: Optional[str] = None, limit: int = 200) -> list[Memory]:
+    async with async_session() as s:
+        stmt = select(MemoryModel).where(MemoryModel.project_id == project_id)
+        if agent_id:
+            stmt = stmt.where(MemoryModel.agent_id == agent_id)
+        stmt = stmt.order_by(MemoryModel.created_at.desc()).limit(limit)
+        result = await s.execute(stmt)
+        return [Memory(
+            id=r.id, project_id=r.project_id, agent_id=r.agent_id,
+            scope=r.scope or "project", type=r.type or "fact",
+            content=r.content, tags=r.tags or [],
+            created_at=(r.created_at.isoformat() + "Z") if r.created_at else "",
+        ) for r in result.scalars().all()]

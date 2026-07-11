@@ -16,6 +16,8 @@ class AgentStatus(str, enum.Enum):
     blocked = "blocked"
     reviewing = "reviewing"
     testing = "testing"
+    error = "error"
+    retired = "retired"
     done = "done"
 
 
@@ -30,6 +32,9 @@ class Agent(BaseModel):
     version: str = "1.0"
     is_permanent: bool = False
     channel: str = "general"
+    emoji: str = ""
+    color: str = ""
+    max_tokens: int = 4096
     status: AgentStatus = AgentStatus.idle
     current_task_id: str | None = None
     skills: list[str] = Field(default_factory=list)

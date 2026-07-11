@@ -20,6 +20,7 @@ const cards = [
 export function Dashboard() {
   const agents = useStore((s) => s.agents);
   const tasks = useStore((s) => s.tasks);
+  const logs = useStore((s) => s.executionLogs);
 
   const online = agents.filter((a) => a.status !== "idle" && a.status !== "done").length;
   const running = tasks.filter((t) => t.status === "working" || t.status === "planning" || t.status === "assigned").length;
@@ -27,6 +28,10 @@ export function Dashboard() {
   const blocked = tasks.filter((t) => t.status === "blocked").length;
 
   const vals = { online, running, completed, blocked };
+
+  const totalCost = logs.reduce((s, l) => s + (l.cost_usd || 0), 0);
+  const totalTokens = logs.reduce((s, l) => s + (l.total_tokens || 0), 0);
+  const avgLatency = logs.length ? Math.round(logs.reduce((s, l) => s + (l.latency_ms || 0), 0) / logs.length) : 0;
 
   if (agents.length === 0) return null;
 
@@ -57,17 +62,34 @@ export function Dashboard() {
           })}
         </div>
 
-        {agents.length > 0 && (
-          <div className="bg-dark-900/60 border border-dark-700/50 rounded-lg p-3">
-            <div className="flex items-center gap-1.5 mb-2">
-              <Clock size={12} className="text-dark-400" />
-              <h4 className="text-[10px] font-semibold text-dark-300 uppercase tracking-wider">Recent Activity</h4>
+        {logs.length > 0 && (
+          <div className="bg-dark-900/60 border border-dark-700/50 rounded-lg p-3 space-y-2">
+            <div className="flex items-center gap-1.5">
+              <TrendingUp size={12} className="text-dark-400" />
+              <h4 className="text-[10px] font-semibold text-dark-300 uppercase tracking-wider">Observability</h4>
             </div>
-            <p className="text-[10px] text-dark-500 leading-relaxed">
-              {agents.filter(a => a.status === "thinking" || a.status === "working").length > 0
-                ? `${agents.filter(a => a.status === "thinking" || a.status === "working").length} agent(s) currently active`
-                : "All agents idle"}
-            </p>
+            <div className="grid grid-cols-3 gap-2 text-[10px]">
+              <div>
+                <span className="text-dark-500">Cost</span>
+                <p className="text-white font-semibold">${totalCost.toFixed(4)}</p>
+              </div>
+              <div>
+                <span className="text-dark-500">Tokens</span>
+                <p className="text-white font-semibold">{totalTokens.toLocaleString()}</p>
+              </div>
+              <div>
+                <span className="text-dark-500">Avg Latency</span>
+                <p className="text-white font-semibold">{avgLatency}ms</p>
+              </div>
+            </div>
+            <div className="max-h-24 overflow-y-auto space-y-1">
+              {logs.slice(0, 10).map((l) => (
+                <div key={l.id} className="flex items-center justify-between text-[10px] text-dark-400">
+                  <span className="truncate max-w-[80px]">{l.agent_name}</span>
+                  <span className="tabular-nums">{l.total_tokens}t · {l.latency_ms}ms</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

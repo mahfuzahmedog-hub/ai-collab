@@ -470,6 +470,12 @@ Delete a channel and all of its sub-channels (id is its slug):
 Create a thread on a message:
 [ACTION]{"type":"create_thread","channel":"general","parent_message_id":"msg-xxxx","title":"Design discussion"}[/ACTION]
 
+Register a tool (tools are discoverable by agents, schema-ready):
+[ACTION]{"type":"add_tool","name":"weather_api","description":"Get weather by city","config":{"url":"https://api.weather.example"}}[/ACTION]
+
+Remove a tool:
+[ACTION]{"type":"remove_tool","name":"weather_api"}[/ACTION]
+
 Create a knowledge base:
 [ACTION]{"type":"create_knowledge_base","name":"Product Specs"}[/ACTION]
 
@@ -478,6 +484,15 @@ Remember a durable fact:
 
 Create and assign a task to an existing agent (assign_to is the agent's name):
 [ACTION]{"type":"create_task","title":"Build login API","description":"...","priority":"high","assign_to":"Ada"}[/ACTION]
+
+Evolve an existing agent — add skills, change personality/mission/channel (version auto-bumps):
+[ACTION]{"type":"evolve_agent","agent_id":"agent-xxxx","skills":["new-skill"],"personality":"updated","mission":"new mission","channel":"backend"}[/ACTION]
+
+Merge two agents: keep absorbs absorb (skills combine, absorb is retired):
+[ACTION]{"type":"merge_agents","keep_id":"agent-keep","absorb_id":"agent-absorb"}[/ACTION]
+
+Split an agent: create a new specialist agent from an existing one:
+[ACTION]{"type":"split_agent","source_id":"agent-xxxx","new_name":"Data-Specialist","new_role":"data_engineer","skills":["analytics"]}[/ACTION]
 
 Retire an agent that is no longer needed (agent_id is the agent's id):
 [ACTION]{"type":"retire_agent","agent_id":"agent-xxxx"}[/ACTION]
@@ -509,8 +524,38 @@ class CoworkerAgent(BaseAgent):
     def _parse_actions(self, text: str) -> list[dict]:
         return super()._parse_actions(text)
 
+    async def _require_approval(self, action: dict, channel: str) -> bool:
+        """Return True if the action needs approval and was deferred."""
+        sensitive = {"retire_agent", "delete_channel"}
+        if action.get("type") not in sensitive:
+            return False
+        from app.db.repository import save_approval, save_notification
+        from app.models.ops import Approval, Notification
+        a = Approval(
+            project_id=self.project.id,
+            agent_id=self.id,
+            agent_name=self.name,
+            action=action.get("type", ""),
+            description=f"Requested: {json.dumps(action, default=str)[:300]}",
+            payload=action,
+        )
+        asyncio.create_task(save_approval(a))
+        await event_bus.publish("approval_created", a.model_dump())
+        n = Notification(
+            project_id=self.project.id, type="approval",
+            title=f"Approval needed: {a.action}",
+            body=f"{self.name} wants to {a.action}",
+            link=f"approval://{a.id}",
+        )
+        asyncio.create_task(save_notification(n))
+        await event_bus.publish("notification", n.model_dump())
+        await self.send_message(self.project.id, f"⏳ I need your approval to {a.action}. Check your notifications.", channel=channel)
+        return True
+
     async def _execute_action(self, action: dict, channel: str = "general"):
         t = action.get("type")
+        if await self._require_approval(action, channel):
+            return
         if t == "create_agent":
             role_name = action.get("role", "backend_engineer")
             await self.create_team([{
@@ -577,6 +622,56 @@ class CoworkerAgent(BaseAgent):
             )
             asyncio.create_task(save_thread(thread))
             await event_bus.publish("thread_created", thread.model_dump())
+        elif t == "evolve_agent":
+            agent_id = action.get("agent_id", "")
+            if agent_id in self.team:
+                w = self.team[agent_id]
+                new_skills = action.get("skills")
+                if new_skills:
+                    w.agent.skills = list(set(w.agent.skills + new_skills))
+                new_personality = action.get("personality")
+                if new_personality:
+                    w.agent.personality = new_personality
+                new_mission = action.get("mission")
+                if new_mission:
+                    w.agent.mission = new_mission
+                new_channel = action.get("channel")
+                if new_channel:
+                    w.agent.channel = new_channel
+                w.agent.version = str(float(w.agent.version) + 0.1) if w.agent.version else "1.1"
+                asyncio.create_task(save_agent(w.agent))
+                await event_bus.publish("agent_updated", w.agent.model_dump())
+        elif t == "merge_agents":
+            keep_id = action.get("keep_id", "")
+            absorb_id = action.get("absorb_id", "")
+            if keep_id in self.team and absorb_id in self.team and keep_id != absorb_id:
+                keep = self.team[keep_id]
+                absorb = self.team.pop(absorb_id)
+                keep.agent.skills = list(set(keep.agent.skills + absorb.agent.skills))
+                keep.agent.memory["merged_from"] = absorb.agent.name
+                keep.agent.version = str(float(keep.agent.version or "1.0") + 0.2)
+                self.project.agent_ids = [aid for aid in self.project.agent_ids if aid != absorb_id]
+                asyncio.create_task(save_agent(keep.agent))
+                await event_bus.publish("agent_updated", keep.agent.model_dump())
+                await event_bus.publish("agent_removed", {"agent_id": absorb_id, "agent_name": absorb.name, "project_id": self.project.id})
+        elif t == "split_agent":
+            source_id = action.get("source_id", "")
+            new_name = action.get("new_name", "Split-Agent")
+            new_role = action.get("new_role", "specialist")
+            if source_id in self.team:
+                source = self.team[source_id]
+                new_skills = action.get("skills", source.agent.skills[-1:])
+                new_agent = Agent(
+                    name=new_name, role=new_role, project_id=self.project.id,
+                    skills=new_skills, personality=source.agent.personality,
+                    channel=source.agent.channel,
+                    provider=source.agent.provider,
+                )
+                new_worker = WorkerAgent(new_agent)
+                self.team[new_agent.id] = new_worker
+                self.project.agent_ids.append(new_agent.id)
+                asyncio.create_task(save_agent(new_agent))
+                await event_bus.publish("agent_created", new_agent.model_dump())
         elif t == "retire_agent":
             agent_id = action.get("agent_id", "")
             if agent_id in self.team:
@@ -587,6 +682,19 @@ class CoworkerAgent(BaseAgent):
                     "agent_name": removed.name,
                     "project_id": self.project.id,
                 })
+        elif t == "add_tool":
+            tool_name = action.get("name", "tool")
+            tool_desc = action.get("description", "")
+            tool_config = action.get("config", {})
+            entry = {"description": tool_desc, "config": tool_config, "enabled": True}
+            asyncio.create_task(save_knowledge_base_entry(self.project.id, "_tools", tool_name, entry))
+            await self.send_message(self.project.id, f"Tool '{tool_name}' registered.", channel=channel)
+        elif t == "remove_tool":
+            tool_name = action.get("name", "")
+            if tool_name:
+                # Store a tombstone
+                asyncio.create_task(save_knowledge_base_entry(self.project.id, "_tools", tool_name, {"enabled": False}))
+                await self.send_message(self.project.id, f"Tool '{tool_name}' removed.", channel=channel)
         elif t == "create_knowledge_base":
             name = action.get("name", "default")
             asyncio.create_task(save_knowledge_base_entry(self.project.id, name, "_created", "true"))
@@ -705,6 +813,19 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
 
         await event_bus.publish("task_created", task.model_dump())
         asyncio.create_task(save_task(task))
+        if assigned_role and self.team:
+            from app.db.repository import save_notification
+            from app.models.ops import Notification
+            for wid, w in self.team.items():
+                if w.agent.role == assigned_role or assigned_role in w.agent.skills:
+                    n = Notification(
+                        project_id=self.project.id, type="task",
+                        title=f"New task: {task.title}",
+                        body=description or task.title, link=f"task://{task.id}",
+                    )
+                    asyncio.create_task(save_notification(n))
+                    await event_bus.publish("notification", n.model_dump())
+                    break
         return task
 
     async def assign_task_to_agent(self, task_id: str, agent_id: str):

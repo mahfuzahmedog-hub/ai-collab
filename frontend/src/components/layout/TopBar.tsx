@@ -7,6 +7,7 @@ import { clsx } from "clsx";
 export function TopBar() {
   const project = useStore((s) => s.project);
   const connected = useStore((s) => s.connected);
+  const unreadNotifs = useStore((s) => s.notifications.filter((n) => !n.read).length);
 
   return (
     <header className="h-12 border-b border-dark-700/60 flex items-center px-4 gap-3 bg-dark-950/80 backdrop-blur-md z-20 shrink-0">
@@ -33,7 +34,11 @@ export function TopBar() {
 
       <button className="text-dark-400 hover:text-dark-200 transition-colors relative" title="Notifications">
         <Bell size={16} />
-        <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-accent-500 rounded-full" />
+        {unreadNotifs > 0 && (
+          <span className="absolute -top-1.5 -right-1.5 bg-accent-500 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+            {unreadNotifs > 9 ? "9+" : unreadNotifs}
+          </span>
+        )}
       </button>
 
       <button className="text-dark-400 hover:text-dark-200 transition-colors" title="Settings">

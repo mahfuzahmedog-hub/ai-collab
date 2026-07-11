@@ -7,6 +7,10 @@ export interface Agent {
   is_permanent?: boolean;
   role: string;
   personality: string;
+  emoji?: string;
+  color?: string;
+  max_tokens?: number;
+  channel?: string;
   status: AgentStatus;
   current_task_id: string | null;
   skills: string[];
@@ -19,7 +23,7 @@ export interface Agent {
 
 export type AgentStatus =
   | "idle" | "thinking" | "working" | "waiting"
-  | "blocked" | "reviewing" | "testing" | "done";
+  | "blocked" | "reviewing" | "testing" | "error" | "retired" | "done";
 
 export interface Task {
   id: string;
@@ -118,6 +122,49 @@ export interface Project {
   user_id: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface ExecutionLog {
+  id: string;
+  project_id: string;
+  agent_id?: string | null;
+  agent_name: string;
+  action: string;
+  model: string;
+  provider: string;
+  status: string;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+  latency_ms: number;
+  input_preview: string;
+  output_preview: string;
+  created_at: string;
+}
+
+export interface Notification {
+  id: string;
+  project_id: string;
+  user_id: string;
+  type: "mention" | "task" | "approval" | "system";
+  title: string;
+  body: string;
+  link?: string | null;
+  read: boolean;
+  created_at: string;
+}
+
+export interface Approval {
+  id: string;
+  project_id: string;
+  agent_id?: string | null;
+  agent_name: string;
+  action: string;
+  description: string;
+  payload: Record<string, any>;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
 }
 
 export interface WSMessage {

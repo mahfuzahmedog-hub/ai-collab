@@ -2,19 +2,46 @@ import asyncio
 import json
 import logging
 import re
+import time
 from datetime import datetime
 from typing import Optional, AsyncGenerator, List, Dict, Any
 from app.models.agent import Agent, AgentStatus
 from app.models.message import Message
+from app.models.ops import ExecutionLog
 from app.llm import llm_router
 from app.core.event_bus import event_bus
-from app.db.repository import save_agent, save_message
+from app.db.repository import save_agent, save_message, save_execution_log, load_memories
 from app.workspace.manager import write_file, read_file, list_files, get_file_tree
 
 logger = logging.getLogger(__name__)
 
 
 ACTION_PATTERN = re.compile(r'\[ACTION\](.*?)\[/ACTION\]', re.DOTALL)
+
+# ponytail: USD per 1K tokens (input, output). Heuristic token counts (~chars/4),
+# not exact provider usage; upgrade path is to read real usage from provider responses.
+_PRICING = {
+    "gpt-4o-mini": (0.00015, 0.0006),
+    "gpt-4o": (0.005, 0.015),
+    "gpt-4": (0.03, 0.06),
+    "claude-3-5-sonnet": (0.003, 0.015),
+    "claude-3-haiku": (0.00025, 0.00125),
+}
+
+
+def _estimate_tokens(text: str) -> int:
+    return max(1, len(text or "") // 4)
+
+
+def _estimate_cost(model: str, in_tok: int, out_tok: int) -> float:
+    rate = None
+    for key, r in _PRICING.items():
+        if key in (model or ""):
+            rate = r
+            break
+    if not rate:
+        return 0.0
+    return round((in_tok / 1000) * rate[0] + (out_tok / 1000) * rate[1], 6)
 
 class BaseAgent:
     def __init__(self, agent: Agent):
@@ -80,11 +107,21 @@ class BaseAgent:
             memory_block = "\nMemory:\n" + "\n".join(
                 f"- {k}: {v}" for k, v in self.agent.memory["facts"].items()
             )
+        try:
+            recent_memories = await load_memories(self.agent.project_id, self.id, limit=20)
+            if recent_memories:
+                memory_block += "\nRecall:\n" + "\n".join(
+                    f"[{m.type}] {m.content[:200]}" for m in recent_memories
+                )
+        except Exception:
+            pass
         messages = [
             {"role": "system", "content": self._system_prompt() + memory_block},
             *self.agent.chat_history[-100:],
             {"role": "user", "content": prompt},
         ]
+        _t0 = time.perf_counter()
+        _status = "completed"
         try:
             provider = llm_router.get_provider(self.agent.provider)
             if not provider:
@@ -97,7 +134,9 @@ class BaseAgent:
                 raise RuntimeError(f"Provider error: {response}")
         except Exception as e:
             logger.error("Agent %s think error: %s", self.name, e)
+            _status = "failed"
             response = f"I received your request but the LLM service is currently unavailable. Please ensure the configured provider ({self.agent.provider}) is running and accessible."
+        await self._log_execution(prompt, response, _status, int((time.perf_counter() - _t0) * 1000))
         self.agent.chat_history.append({"role": "user", "content": prompt})
         self.agent.chat_history.append({"role": "assistant", "content": response})
         self.agent.memory["short_term"].append({"prompt": prompt, "response": response})
@@ -151,6 +190,31 @@ class BaseAgent:
                 "done": True,
             })
         self.status = AgentStatus.idle
+
+    async def _log_execution(self, prompt: str, response: str, status: str, latency_ms: int):
+        try:
+            in_tok = _estimate_tokens(prompt)
+            out_tok = _estimate_tokens(response)
+            log = ExecutionLog(
+                project_id=self.agent.project_id,
+                agent_id=self.id,
+                agent_name=self.name,
+                action="llm_call",
+                model=self.agent.model,
+                provider=self.agent.provider,
+                status=status,
+                input_tokens=in_tok,
+                output_tokens=out_tok,
+                total_tokens=in_tok + out_tok,
+                cost_usd=_estimate_cost(self.agent.model, in_tok, out_tok),
+                latency_ms=latency_ms,
+                input_preview=(prompt or "")[:280],
+                output_preview=(response or "")[:280],
+            )
+            asyncio.create_task(save_execution_log(log))
+            await event_bus.publish("execution_log", log.model_dump())
+        except Exception as e:
+            logger.warning("execution log failed: %s", e)
 
     async def send_message(self, project_id: str, content: str, msg_type: str = "chat", mentions: Optional[list[str]] = None, channel: str = "general", thread_id: Optional[str] = None):
         msg = Message(

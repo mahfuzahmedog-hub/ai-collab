@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Agent, Task, Message, Project, AgentStatus, Channel, FileNode, Thread } from "@/types";
+import type { Agent, Task, Message, Project, AgentStatus, Channel, FileNode, Thread, ExecutionLog, Notification, Approval } from "@/types";
 
 interface AppState {
   // Project state
@@ -26,6 +26,11 @@ interface AppState {
   // File tree
   files: FileNode[];
 
+  // Observability / ops
+  executionLogs: ExecutionLog[];
+  notifications: Notification[];
+  approvals: Approval[];
+
   // Streaming
   streamingChunk: { agentId: string; content: string; done: boolean } | null;
 
@@ -51,14 +56,24 @@ interface AppState {
   setActiveThread: (id: string | null) => void;
   setAgents: (a: Agent[]) => void;
   addAgent: (a: Agent) => void;
+  updateAgent: (id: string, data: Partial<Agent>) => void;
   updateAgentStatus: (id: string, status: AgentStatus) => void;
   removeAgent: (id: string) => void;
   setTasks: (t: Task[]) => void;
   addTask: (t: Task) => void;
   updateTask: (id: string, data: Partial<Task>) => void;
   addMessage: (m: Message) => void;
+  updateMessage: (id: string, content: string) => void;
+  removeMessage: (id: string) => void;
   setMessages: (m: Message[]) => void;
   setFiles: (f: FileNode[]) => void;
+  setExecutionLogs: (l: ExecutionLog[]) => void;
+  addExecutionLog: (l: ExecutionLog) => void;
+  setNotifications: (n: Notification[]) => void;
+  addNotification: (n: Notification) => void;
+  markNotificationRead: (id: string) => void;
+  setApprovals: (a: Approval[]) => void;
+  upsertApproval: (a: Approval) => void;
   setStreamingChunk: (chunk: { agentId: string; content: string; done: boolean } | null) => void;
   setConnected: (c: boolean) => void;
   setActiveTab: (t: string) => void;
@@ -91,6 +106,9 @@ export const useStore = create<AppState>((set) => ({
   tasks: [],
   messages: [],
   files: [],
+  executionLogs: [],
+  notifications: [],
+  approvals: [],
   streamingChunk: null,
   connected: false,
   activeTab: "workspace",
@@ -126,6 +144,8 @@ export const useStore = create<AppState>((set) => ({
   setActiveThread: (id) => set({ activeThread: id }),
   setAgents: (a) => set({ agents: a }),
   addAgent: (a) => set((s) => ({ agents: [...s.agents, a] })),
+  updateAgent: (id, data) =>
+    set((s) => ({ agents: s.agents.map((a) => (a.id === id ? { ...a, ...data } : a)) })),
   updateAgentStatus: (id, status) =>
     set((s) => ({
       agents: s.agents.map((a) => (a.id === id ? { ...a, status } : a)),
@@ -139,8 +159,27 @@ export const useStore = create<AppState>((set) => ({
       tasks: s.tasks.map((t) => (t.id === id ? { ...t, ...data } : t)),
     })),
   addMessage: (m) => set((s) => ({ messages: [...s.messages, m] })),
+  updateMessage: (id, content) =>
+    set((s) => ({
+      messages: s.messages.map((m) => (m.id === id ? { ...m, content } : m)),
+    })),
+  removeMessage: (id) =>
+    set((s) => ({ messages: s.messages.filter((m) => m.id !== id) })),
   setMessages: (m) => set({ messages: m }),
   setFiles: (f) => set({ files: f }),
+  setExecutionLogs: (l) => set({ executionLogs: l }),
+  addExecutionLog: (l) => set((s) => ({ executionLogs: [l, ...s.executionLogs].slice(0, 500) })),
+  setNotifications: (n) => set({ notifications: n }),
+  addNotification: (n) => set((s) => ({ notifications: [n, ...s.notifications].slice(0, 200) })),
+  markNotificationRead: (id) =>
+    set((s) => ({ notifications: s.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)) })),
+  setApprovals: (a) => set({ approvals: a }),
+  upsertApproval: (a) =>
+    set((s) => ({
+      approvals: s.approvals.some((x) => x.id === a.id)
+        ? s.approvals.map((x) => (x.id === a.id ? a : x))
+        : [a, ...s.approvals],
+    })),
   setStreamingChunk: (chunk) => set({ streamingChunk: chunk }),
   setConnected: (c) => set({ connected: c }),
   setActiveTab: (t) => set({ activeTab: t }),
@@ -156,6 +195,9 @@ export const useStore = create<AppState>((set) => ({
       threads: [],
       activeThread: null,
       project: null,
+      executionLogs: [],
+      notifications: [],
+      approvals: [],
       streamingChunk: null,
     }),
 }));

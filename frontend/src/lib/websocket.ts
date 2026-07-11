@@ -1,4 +1,4 @@
-import type { Agent, Task, Message, Project, Channel, FileNode, Thread } from "@/types";
+import type { Agent, Task, Message, Project, Channel, FileNode, Thread, ExecutionLog, Notification, Approval } from "@/types";
 import { useStore } from "@/store";
 
 let ws: WebSocket | null = null;
@@ -128,8 +128,20 @@ function handleMessage(data: any) {
       }
       break;
 
+    case "message_edited":
+      store.updateMessage(data.message_id, data.content);
+      break;
+
+    case "message_deleted":
+      store.removeMessage(data.message_id);
+      break;
+
     case "agent_created":
       store.addAgent(data as Agent);
+      break;
+
+    case "agent_updated":
+      if (data.id) store.updateAgent(data.id, data as Partial<Agent>);
       break;
 
     case "agent_removed":
@@ -212,8 +224,37 @@ function handleMessage(data: any) {
       store.removeAgent(data.agent_id);
       break;
 
+    case "project_updated":
+      if (data.project) store.setProject(data.project as Project);
+      break;
+
     case "project_switched":
       store.setActiveProjectId(data.project_id);
+      break;
+
+    case "execution_logs":
+      if (data.logs) store.setExecutionLogs(data.logs as ExecutionLog[]);
+      break;
+
+    case "execution_log":
+      store.addExecutionLog(data as unknown as ExecutionLog);
+      break;
+
+    case "notification_list":
+      if (data.notifications) store.setNotifications(data.notifications as Notification[]);
+      break;
+
+    case "notification":
+      store.addNotification(data as unknown as Notification);
+      break;
+
+    case "approval_list":
+      if (data.approvals) store.setApprovals(data.approvals as Approval[]);
+      break;
+
+    case "approval_created":
+    case "approval_updated":
+      store.upsertApproval(data as unknown as Approval);
       break;
 
     case "stream_chunk":
