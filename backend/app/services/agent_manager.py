@@ -101,7 +101,7 @@ class AgentManager:
             msgs = await load_project_messages(project_id)
             if self.boss:
                 for m in msgs:
-                    if m.msg_type not in ("task_update", "review"):
+                    if m.msg_type not in ("task_update", "review", "system"):
                         self.boss.agent.chat_history.append(
                             {"role": "user" if m.sender_role == "user" else "assistant", "content": m.content}
                         )
