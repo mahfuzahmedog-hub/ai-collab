@@ -172,5 +172,7 @@ Respond helpfully and professionally. You can offer to take on tasks, answer que
         if not response.strip():
             response = "I received your message but the LLM service is temporarily unavailable. Please try again in a moment."
         clean = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', response, flags=re.DOTALL).strip()
+        if not clean:
+            clean = response.strip() or "I received your message. How can I help?"
         dm_channel = f"dm-{self.name.lower().replace(' ', '-')}"
         await self.send_message(project_id, clean, channel=dm_channel)

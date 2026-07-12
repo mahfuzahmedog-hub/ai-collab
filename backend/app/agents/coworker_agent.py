@@ -467,7 +467,9 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
             response = "I received your message but the LLM service is temporarily unavailable. Please try again in a moment."
         actions = self._parse_actions(response)
         clean = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', response, flags=re.DOTALL).strip()
-        await self.send_message(project_id, clean or response, channel=channel)
+        if not clean:
+            clean = "Executed: " + ", ".join(a.get("type", "action") for a in actions) if actions else response
+        await self.send_message(project_id, clean, channel=channel)
         for action in actions:
             await self._execute_action(action, channel)
 
