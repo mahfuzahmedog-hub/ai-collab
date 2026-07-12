@@ -317,10 +317,10 @@ function handleMessage(data: any) {
       break;
 
     case "stream_chunk":
-      if (data.agent_id && data.content) {
+      if (data.agent_id) {
         store.setStreamingChunk({
           agentId: data.agent_id,
-          content: data.content,
+          content: data.content ?? "",
           done: data.done === true,
         });
       }

@@ -8,18 +8,21 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-MAX_CONCURRENT = 2
+MAX_CONCURRENT = 10
 MAX_RETRIES = 3
 BASE_DELAY = 1.0
 
 # ponytail: reliable groq models tried in order when the primary 429s.
+# Order matters: smaller/faster models first to avoid 413/429 errors.
 # These are same-account keys so key rotation can't beat a model-level limit;
 # switching models is what actually gets past a per-model rate cap.
 OMNIROUTE_FALLBACK_MODELS = [
-    "groq/llama-3.3-70b-versatile",
-    "groq/meta-llama/llama-4-scout-17b-16e-instruct",
-    "groq/openai/gpt-oss-120b",
-    "auto/best-free",
+    "groq/llama-3.1-8b-instant",          # Fast, high rate limits, small context
+    "groq/llama-3.1-8b-instant",          # Duplicate for retry
+    "auto/best-free",                      # Auto-select best free
+    "groq/meta-llama/llama-4-scout-17b-16e-instruct",  # Larger context fallback
+    "groq/openai/gpt-oss-120b",           # Large context fallback
+    "auto/best-free",                      # Auto-select best free
 ]
 
 _omniroute_sem = asyncio.Semaphore(MAX_CONCURRENT)
@@ -379,15 +382,14 @@ class OmniRouteProvider(LLMProvider):
         async with _omniroute_sem:
             last_exc: Exception | None = None
             for model in self._model_chain():
-                body = {
-                    "model": model,
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                    "stream": False,
-                }
                 try:
-                    resp = await self._request(body)
+                    resp = await self._request({
+                        "model": model,
+                        "messages": messages,
+                        "temperature": temperature,
+                        "max_tokens": max_tokens,
+                        "stream": False,
+                    })
                     return self._extract_content(resp.json()["choices"][0])
                 except Exception as e:
                     last_exc = e

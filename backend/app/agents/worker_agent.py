@@ -166,7 +166,9 @@ As a {self.agent.role} with skills in {', '.join(self.agent.skills)}, please pro
 
 You are {self.name}, a {self.agent.role} with skills in {', '.join(self.agent.skills)}.
 Respond helpfully and professionally. You can offer to take on tasks, answer questions, or provide information."""
-        response = await self.think(prompt)
+        response = ""
+        async for chunk in self.think_stream(prompt):
+            response += chunk
         clean = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', response, flags=re.DOTALL).strip()
         dm_channel = f"dm-{self.name.lower().replace(' ', '-')}"
         await self.send_message(project_id, clean, channel=dm_channel)
