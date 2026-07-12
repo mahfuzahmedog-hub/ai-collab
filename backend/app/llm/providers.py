@@ -313,15 +313,13 @@ class OmniRouteProvider(LLMProvider):
         return key
 
     def _extract_content(self, choice: dict) -> str:
-        # Handle both non-streaming and streaming responses
-        # For streaming responses, delta contains the content/reasoning_content
+        if not choice:
+            return ""
         if "delta" in choice:
             return (
                 choice.get("delta", {}).get("content")
                 or choice.get("delta", {}).get("reasoning_content", "")
             )
-
-        # For non-streaming responses, message contains content/reasoning_content
         msg = choice.get("message", choice)
         return (
             msg.get("content")
@@ -392,7 +390,7 @@ class OmniRouteProvider(LLMProvider):
                     })
                     data = resp.json()
                     choices = data.get("choices")
-                    if not choices:
+                    if not choices or choices[0] is None:
                         raise RuntimeError(f"OmniRoute returned no choices: {str(data)[:200]}")
                     return self._extract_content(choices[0])
                 except Exception as e:
@@ -408,45 +406,57 @@ class OmniRouteProvider(LLMProvider):
             # ponytail: OmniRoute can emit trailing/error chunks without a
             # `choices` array (usage or error frames). Guard against missing or
             # empty choices so a single odd frame can't kill the whole stream.
-            key = self._next_key()
-            try:
-                async with self._client.stream(
-                    "POST", f"{self.config.base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": self.config.model or "auto/best-free",
-                        "messages": messages,
-                        "temperature": temperature,
-                        "max_tokens": max_tokens,
-                        "stream": True,
-                    },
-                    timeout=120.0,
-                ) as resp:
-                    resp.raise_for_status()
-                    async for line in resp.aiter_lines():
-                        if not line.startswith("data: "):
-                            continue
-                        data = line[6:]
-                        if data.strip() == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data)
-                        except json.JSONDecodeError:
-                            continue
-                        choices = chunk.get("choices")
-                        if not choices:
-                            continue
-                        first = choices[0] or {}
-                        delta = first.get("delta", {}) or {}
-                        content = delta.get("content") or delta.get("reasoning_content", "")
-                        if content:
-                            yield content
-            except Exception as e:
-                logger.warning("OmniRoute stream failed (model=%s): %s", self.config.model, str(e)[:200])
-                raise
+            last_exc: Exception | None = None
+            for model in self._model_chain():
+                try:
+                    key = self._next_key()
+                    yielded = False
+                    async with self._client.stream(
+                        "POST", f"{self.config.base_url}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {key}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": model,
+                            "messages": messages,
+                            "temperature": temperature,
+                            "max_tokens": max_tokens,
+                            "stream": True,
+                        },
+                        timeout=120.0,
+                    ) as resp:
+                        resp.raise_for_status()
+                        async for line in resp.aiter_lines():
+                            if not line.startswith("data: "):
+                                continue
+                            data = line[6:]
+                            if data.strip() == "[DONE]":
+                                break
+                            try:
+                                chunk = json.loads(data)
+                            except json.JSONDecodeError:
+                                continue
+                            choices = chunk.get("choices")
+                            if not choices:
+                                continue
+                            first = choices[0] or {}
+                            delta = first.get("delta", {}) or {}
+                            content = delta.get("content") or delta.get("reasoning_content", "")
+                            if content:
+                                yielded = True
+                                yield content
+                    # Stream completed normally
+                    break
+                except Exception as e:
+                    if yielded:
+                        # Already sent tokens — can't switch models mid-stream
+                        raise
+                    last_exc = e
+                    logger.warning("OmniRoute stream model %s failed (%s), trying next", model, str(e)[:120])
+                    continue
+            else:
+                raise last_exc or RuntimeError("OmniRoute: all models failed for stream")
 
 
 class OpenRouterProvider(LLMProvider):
