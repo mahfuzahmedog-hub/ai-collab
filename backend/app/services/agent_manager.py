@@ -2,6 +2,7 @@ import asyncio
 import logging
 from typing import Optional
 from app.models.agent import Agent, AgentStatus
+from app.models.project import Project
 from app.core.config import settings
 from app.agents.coworker_agent import CoworkerAgent
 from app.agents.worker_agent import WorkerAgent
@@ -28,6 +29,11 @@ class AgentManager:
             model=settings.llm_default_model,
         )
         self.boss = CoworkerAgent(agent)
+        # Ensure self.boss.project is set even before initialize_workspace() is
+        # called (e.g. via the lazy restore_boss path), so action execution that
+        # reads self.project.id never crashes on a fresh project.
+        proj = await load_project(project_id)
+        self.boss.project = proj or Project(id=project_id, title="Untitled Project")
         await self.boss.start()
         await event_bus.publish("agent_created", agent.model_dump())
         asyncio.create_task(save_agent(agent))
