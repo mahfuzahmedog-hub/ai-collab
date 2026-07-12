@@ -463,6 +463,8 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
         response = ""
         async for chunk in self.think_stream(prompt):
             response += chunk
+        if not response.strip():
+            response = "I received your message but the LLM service is temporarily unavailable. Please try again in a moment."
         actions = self._parse_actions(response)
         clean = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', response, flags=re.DOTALL).strip()
         await self.send_message(project_id, clean or response, channel=channel)

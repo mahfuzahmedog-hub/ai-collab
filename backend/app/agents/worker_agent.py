@@ -169,6 +169,8 @@ Respond helpfully and professionally. You can offer to take on tasks, answer que
         response = ""
         async for chunk in self.think_stream(prompt):
             response += chunk
+        if not response.strip():
+            response = "I received your message but the LLM service is temporarily unavailable. Please try again in a moment."
         clean = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', response, flags=re.DOTALL).strip()
         dm_channel = f"dm-{self.name.lower().replace(' ', '-')}"
         await self.send_message(project_id, clean, channel=dm_channel)

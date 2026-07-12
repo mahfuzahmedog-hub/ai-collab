@@ -226,14 +226,15 @@ class BaseAgent:
                 "done": True,
             })
         except Exception as e:
+            # ponytail: tunnel/LLM flake mid-stream — don't inject raw error text
+            # into the user's reply; keep whatever good tokens we already streamed.
             logger.error("Agent %s stream error: %s", self.name, e)
-            yield f"[Error: {e}]"
             await event_bus.publish("stream_chunk", {
                 "agent_id": self.id,
                 "agent_name": self.name,
                 "agent_role": str(self.role),
                 "project_id": self.agent.project_id,
-                "content": f"[Error: {e}]",
+                "content": "",
                 "done": True,
             })
         await self.set_status(AgentStatus.idle)
