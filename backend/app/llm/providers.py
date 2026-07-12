@@ -390,7 +390,11 @@ class OmniRouteProvider(LLMProvider):
                         "max_tokens": max_tokens,
                         "stream": False,
                     })
-                    return self._extract_content(resp.json()["choices"][0])
+                    data = resp.json()
+                    choices = data.get("choices")
+                    if not choices:
+                        raise RuntimeError(f"OmniRoute returned no choices: {str(data)[:200]}")
+                    return self._extract_content(choices[0])
                 except Exception as e:
                     last_exc = e
                     logger.warning("OmniRoute model %s failed (%s), trying next", model, str(e)[:120])
@@ -401,36 +405,48 @@ class OmniRouteProvider(LLMProvider):
 
     async def chat_stream(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096):
         async with _omniroute_sem:
-            body = {
-                "model": self.config.model or "auto",
-                "messages": messages,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-                "stream": True,
-            }
-            async with self._client.stream(
-                "POST", f"{self.config.base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self._next_key()}",
-                    "Content-Type": "application/json",
-                },
-                json=body,
-            ) as resp:
-                async for line in resp.aiter_lines():
-                    if line.startswith("data: "):
+            # ponytail: OmniRoute can emit trailing/error chunks without a
+            # `choices` array (usage or error frames). Guard against missing or
+            # empty choices so a single odd frame can't kill the whole stream.
+            key = self._next_key()
+            try:
+                async with self._client.stream(
+                    "POST", f"{self.config.base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": self.config.model or "auto/best-free",
+                        "messages": messages,
+                        "temperature": temperature,
+                        "max_tokens": max_tokens,
+                        "stream": True,
+                    },
+                    timeout=120.0,
+                ) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
                         data = line[6:]
-                        if data == "[DONE]":
+                        if data.strip() == "[DONE]":
                             break
                         try:
                             chunk = json.loads(data)
-                            delta = (
-                                chunk["choices"][0].get("delta", {}).get("content")
-                                or chunk["choices"][0].get("delta", {}).get("reasoning_content", "")
-                            )
-                            if delta:
-                                yield delta
                         except json.JSONDecodeError:
                             continue
+                        choices = chunk.get("choices")
+                        if not choices:
+                            continue
+                        first = choices[0] or {}
+                        delta = first.get("delta", {}) or {}
+                        content = delta.get("content") or delta.get("reasoning_content", "")
+                        if content:
+                            yield content
+            except Exception as e:
+                logger.warning("OmniRoute stream failed (model=%s): %s", self.config.model, str(e)[:200])
+                raise
 
 
 class OpenRouterProvider(LLMProvider):
