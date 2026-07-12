@@ -112,7 +112,7 @@ class AgentManager:
                         self.boss.agent.chat_history.append(
                             {"role": "user" if m.sender_role == "user" else "assistant", "content": m.content}
                         )
-            logger.info("Restored messages for project %s", len(msgs), project_id)
+            logger.info("Restored %d messages for project %s", len(msgs), project_id)
         except Exception as e:
             logger.warning("Project restore skipped: %s", e)
 
