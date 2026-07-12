@@ -36,7 +36,7 @@ class AgentManager:
         self.boss.project = proj or Project(id=project_id, title="Untitled Project")
         await self.boss.start()
         await event_bus.publish("agent_created", agent.model_dump())
-        asyncio.create_task(save_agent(agent))
+        await save_agent(agent)
         asyncio.create_task(self._restore_project(project_id))
         self.current_project_id = project_id
         return self.boss
@@ -134,7 +134,7 @@ class AgentManager:
         worker = WorkerAgent(agent)
         self.workers[agent.id] = worker
         await event_bus.publish("agent_created", agent.model_dump())
-        asyncio.create_task(save_agent(agent))
+        await save_agent(agent)
         return worker
 
     async def get_agent(self, agent_id: str):
