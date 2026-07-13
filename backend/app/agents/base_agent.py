@@ -110,6 +110,14 @@ class BaseAgent:
                     # instead of going silent. (Upgrade: cap tool schema width.)
                     if not content and not tool_calls and tools:
                         content = (await provider.chat(messages, temperature=temperature)) or ""
+                    # Also parse [ACTION] blocks from streaming text — the system
+                    # prompt tells the LLM to use them, but for native-tool providers
+                    # the code path only handles native function calls. Catching both
+                    # means the model can use whichever it prefers.
+                    action_tcs = self._parse_actions_to_tool_calls(content)
+                    if action_tcs:
+                        content = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', content, flags=re.DOTALL).strip()
+                        tool_calls.extend(action_tcs)
                     state["_new_content"] = content
                 else:
                     response = await provider.chat(messages, temperature=temperature)
