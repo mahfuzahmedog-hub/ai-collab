@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.api.routes import messages, projects, agents, tasks, health
 from app.websocket.manager import ws_manager
 from app.services.agent_manager import agent_manager
+from app.tools.schema import register_all_schemas
 
 logging.basicConfig(level=logging.INFO if not settings.debug else logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -16,6 +17,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Starting AI Collaboration Platform...")
     os.makedirs("data", exist_ok=True)
+    register_all_schemas()
+    logger.info("Tool schemas registered")
     try:
         from app.db.session import init_db
         await init_db()

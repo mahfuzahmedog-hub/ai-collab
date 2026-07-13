@@ -3,7 +3,7 @@ import json
 import logging
 from typing import AsyncGenerator
 import httpx
-from app.llm.base import LLMProvider, ProviderConfig
+from app.llm.base import LLMProvider, ProviderConfig, LLMResponse, ToolCallRequest
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -35,10 +35,15 @@ class OpenAIProvider(LLMProvider):
             base_url=settings.openai_base_url or "https://api.openai.com/v1",
             model=settings.llm_default_model or "gpt-4o-mini",
         )
+        self._last_tool_calls: list[ToolCallRequest] = []
 
     @property
     def name(self) -> str:
         return "openai"
+
+    @property
+    def supports_tools(self) -> bool:
+        return True
 
     async def chat(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096) -> str:
         if not self.config.api_key:
@@ -51,6 +56,29 @@ class OpenAIProvider(LLMProvider):
             )
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"]
+
+    async def chat_with_tools(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096, tools: list[dict] | None = None) -> LLMResponse:
+        if not self.config.api_key:
+            return LLMResponse(content="[OpenAI not configured]")
+        body = {"model": self.config.model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
+        if tools:
+            body["tools"] = tools
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{self.config.base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self.config.api_key}", "Content-Type": "application/json"},
+                json=body,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            msg = data["choices"][0]["message"]
+            content = msg.get("content", "") or ""
+            tool_calls = []
+            for tc in msg.get("tool_calls", []):
+                tool_calls.append(ToolCallRequest(
+                    id=tc["id"], name=tc["function"]["name"], arguments=tc["function"]["arguments"],
+                ))
+            return LLMResponse(content=content, tool_calls=tool_calls)
 
     async def chat_stream(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096):
         if not self.config.api_key:
@@ -75,6 +103,54 @@ class OpenAIProvider(LLMProvider):
                         except json.JSONDecodeError:
                             continue
 
+    async def chat_stream_with_tools(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096, tools: list[dict] | None = None):
+        if not self.config.api_key:
+            yield "[OpenAI not configured]"
+            return
+        self._last_tool_calls = []
+        body = {"model": self.config.model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": True}
+        if tools:
+            body["tools"] = tools
+        async with httpx.AsyncClient(timeout=120) as client:
+            async with client.stream(
+                "POST", f"{self.config.base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self.config.api_key}", "Content-Type": "application/json"},
+                json=body,
+            ) as resp:
+                tool_calls_acc: dict[int, dict] = {}
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data = line[6:]
+                    if data.strip() == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    choices = chunk.get("choices", [])
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta", {}) or {}
+                    content = delta.get("content", "") or ""
+                    if content:
+                        yield content
+                    for tc in delta.get("tool_calls", []):
+                        idx = tc["index"]
+                        if idx not in tool_calls_acc:
+                            tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
+                        if tc.get("id"):
+                            tool_calls_acc[idx]["id"] = tc["id"]
+                        if tc.get("function", {}).get("name"):
+                            tool_calls_acc[idx]["name"] = tc["function"]["name"]
+                        if tc.get("function", {}).get("arguments"):
+                            tool_calls_acc[idx]["arguments"] += tc["function"]["arguments"]
+                if tool_calls_acc:
+                    self._last_tool_calls = [
+                        ToolCallRequest(id=tc["id"], name=tc["name"], arguments=tc["arguments"])
+                        for _, tc in sorted(tool_calls_acc.items())
+                    ]
+
 
 class GroqProvider(LLMProvider):
     def __init__(self):
@@ -83,10 +159,15 @@ class GroqProvider(LLMProvider):
             base_url=settings.groq_base_url,
             model="mixtral-8x7b-32768",
         )
+        self._last_tool_calls: list[ToolCallRequest] = []
 
     @property
     def name(self) -> str:
         return "groq"
+
+    @property
+    def supports_tools(self) -> bool:
+        return True
 
     async def chat(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096) -> str:
         if not self.config.api_key:
@@ -99,6 +180,29 @@ class GroqProvider(LLMProvider):
             )
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"]
+
+    async def chat_with_tools(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096, tools: list[dict] | None = None) -> LLMResponse:
+        if not self.config.api_key:
+            return LLMResponse(content="[Groq not configured]")
+        body = {"model": self.config.model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
+        if tools:
+            body["tools"] = tools
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{self.config.base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self.config.api_key}", "Content-Type": "application/json"},
+                json=body,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            msg = data["choices"][0]["message"]
+            content = msg.get("content", "") or ""
+            tool_calls = []
+            for tc in msg.get("tool_calls", []):
+                tool_calls.append(ToolCallRequest(
+                    id=tc["id"], name=tc["function"]["name"], arguments=tc["function"]["arguments"],
+                ))
+            return LLMResponse(content=content, tool_calls=tool_calls)
 
     async def chat_stream(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096):
         if not self.config.api_key:
@@ -122,6 +226,54 @@ class GroqProvider(LLMProvider):
                                 yield delta
                         except json.JSONDecodeError:
                             continue
+
+    async def chat_stream_with_tools(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096, tools: list[dict] | None = None):
+        if not self.config.api_key:
+            yield "[Groq not configured]"
+            return
+        self._last_tool_calls = []
+        body = {"model": self.config.model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": True}
+        if tools:
+            body["tools"] = tools
+        async with httpx.AsyncClient(timeout=120) as client:
+            async with client.stream(
+                "POST", f"{self.config.base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self.config.api_key}", "Content-Type": "application/json"},
+                json=body,
+            ) as resp:
+                tool_calls_acc: dict[int, dict] = {}
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data = line[6:]
+                    if data.strip() == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    choices = chunk.get("choices", [])
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta", {}) or {}
+                    content = delta.get("content", "") or ""
+                    if content:
+                        yield content
+                    for tc in delta.get("tool_calls", []):
+                        idx = tc["index"]
+                        if idx not in tool_calls_acc:
+                            tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
+                        if tc.get("id"):
+                            tool_calls_acc[idx]["id"] = tc["id"]
+                        if tc.get("function", {}).get("name"):
+                            tool_calls_acc[idx]["name"] = tc["function"]["name"]
+                        if tc.get("function", {}).get("arguments"):
+                            tool_calls_acc[idx]["arguments"] += tc["function"]["arguments"]
+                if tool_calls_acc:
+                    self._last_tool_calls = [
+                        ToolCallRequest(id=tc["id"], name=tc["name"], arguments=tc["arguments"])
+                        for _, tc in sorted(tool_calls_acc.items())
+                    ]
 
 
 class GeminiProvider(LLMProvider):
@@ -300,10 +452,15 @@ class OmniRouteProvider(LLMProvider):
         self._keys = [k.strip() for k in raw.split(",") if k.strip()]
         self._key_idx = 0
         self._client = httpx.AsyncClient(timeout=120)
+        self._last_tool_calls: list[ToolCallRequest] = []
 
     @property
     def name(self) -> str:
         return "omniroute"
+
+    @property
+    def supports_tools(self) -> bool:
+        return True
 
     def _next_key(self) -> str:
         if not self._keys:
@@ -458,6 +615,93 @@ class OmniRouteProvider(LLMProvider):
             else:
                 raise last_exc or RuntimeError("OmniRoute: all models failed for stream")
 
+    async def chat_with_tools(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096, tools: list[dict] | None = None) -> LLMResponse:
+        async with _omniroute_sem:
+            last_exc: Exception | None = None
+            for model in self._model_chain():
+                try:
+                    body = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": False}
+                    if tools:
+                        body["tools"] = tools
+                    resp = await self._request(body)
+                    data = resp.json()
+                    choices = data.get("choices")
+                    if not choices or choices[0] is None:
+                        raise RuntimeError(f"OmniRoute returned no choices: {str(data)[:200]}")
+                    msg = choices[0].get("message", choices[0])
+                    content = msg.get("content", "") or ""
+                    tool_calls = []
+                    for tc in msg.get("tool_calls", []):
+                        tool_calls.append(ToolCallRequest(id=tc["id"], name=tc["function"]["name"], arguments=tc["function"]["arguments"]))
+                    return LLMResponse(content=content, tool_calls=tool_calls)
+                except Exception as e:
+                    last_exc = e
+                    logger.warning("OmniRoute model %s (tools) failed (%s), trying next", model, str(e)[:120])
+                    continue
+            raise last_exc or RuntimeError("OmniRoute: all models failed for tools")
+
+    async def chat_stream_with_tools(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096, tools: list[dict] | None = None):
+        async with _omniroute_sem:
+            self._last_tool_calls = []
+            last_exc: Exception | None = None
+            for model in self._model_chain():
+                try:
+                    key = self._next_key()
+                    yielded = False
+                    body = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": True}
+                    if tools:
+                        body["tools"] = tools
+                    async with self._client.stream(
+                        "POST", f"{self.config.base_url}/chat/completions",
+                        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                        json=body, timeout=120.0,
+                    ) as resp:
+                        resp.raise_for_status()
+                        tool_calls_acc: dict[int, dict] = {}
+                        async for line in resp.aiter_lines():
+                            if not line.startswith("data: "):
+                                continue
+                            data = line[6:]
+                            if data.strip() == "[DONE]":
+                                break
+                            try:
+                                chunk = json.loads(data)
+                            except json.JSONDecodeError:
+                                continue
+                            choices = chunk.get("choices")
+                            if not choices:
+                                continue
+                            first = choices[0] or {}
+                            delta = first.get("delta", {}) or {}
+                            content = delta.get("content") or delta.get("reasoning_content", "")
+                            if content:
+                                yielded = True
+                                yield content
+                            for tc in delta.get("tool_calls", []):
+                                idx = tc["index"]
+                                if idx not in tool_calls_acc:
+                                    tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
+                                if tc.get("id"):
+                                    tool_calls_acc[idx]["id"] = tc["id"]
+                                if tc.get("function", {}).get("name"):
+                                    tool_calls_acc[idx]["name"] = tc["function"]["name"]
+                                if tc.get("function", {}).get("arguments"):
+                                    tool_calls_acc[idx]["arguments"] += tc["function"]["arguments"]
+                        if tool_calls_acc:
+                            self._last_tool_calls = [
+                                ToolCallRequest(id=tc["id"], name=tc["name"], arguments=tc["arguments"])
+                                for _, tc in sorted(tool_calls_acc.items())
+                            ]
+                    break
+                except Exception as e:
+                    if yielded:
+                        raise
+                    last_exc = e
+                    logger.warning("OmniRoute stream model %s (tools) failed (%s), trying next", model, str(e)[:120])
+                    continue
+            else:
+                raise last_exc or RuntimeError("OmniRoute: all models failed for stream tools")
+
 
 class OpenRouterProvider(LLMProvider):
     def __init__(self):
@@ -466,10 +710,15 @@ class OpenRouterProvider(LLMProvider):
             base_url=settings.openrouter_base_url,
             model=settings.openrouter_default_model,
         )
+        self._last_tool_calls: list[ToolCallRequest] = []
 
     @property
     def name(self) -> str:
         return "openrouter"
+
+    @property
+    def supports_tools(self) -> bool:
+        return True
 
     async def chat(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096) -> str:
         if not self.config.api_key:
@@ -490,6 +739,29 @@ class OpenRouterProvider(LLMProvider):
             )
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"]
+
+    async def chat_with_tools(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096, tools: list[dict] | None = None) -> LLMResponse:
+        if not self.config.api_key:
+            return LLMResponse(content="[OpenRouter not configured]")
+        body = {"model": self.config.model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
+        if tools:
+            body["tools"] = tools
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{self.config.base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self.config.api_key}", "Content-Type": "application/json"},
+                json=body,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            msg = data["choices"][0]["message"]
+            content = msg.get("content", "") or ""
+            tool_calls = []
+            for tc in msg.get("tool_calls", []):
+                tool_calls.append(ToolCallRequest(
+                    id=tc["id"], name=tc["function"]["name"], arguments=tc["function"]["arguments"],
+                ))
+            return LLMResponse(content=content, tool_calls=tool_calls)
 
     async def chat_stream(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096):
         if not self.config.api_key:
@@ -522,3 +794,51 @@ class OpenRouterProvider(LLMProvider):
                                 yield delta
                         except json.JSONDecodeError:
                             continue
+
+    async def chat_stream_with_tools(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096, tools: list[dict] | None = None):
+        if not self.config.api_key:
+            yield "[OpenRouter not configured]"
+            return
+        self._last_tool_calls = []
+        body = {"model": self.config.model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": True}
+        if tools:
+            body["tools"] = tools
+        async with httpx.AsyncClient(timeout=120) as client:
+            async with client.stream(
+                "POST", f"{self.config.base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self.config.api_key}", "Content-Type": "application/json"},
+                json=body,
+            ) as resp:
+                tool_calls_acc: dict[int, dict] = {}
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data = line[6:]
+                    if data.strip() == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    choices = chunk.get("choices", [])
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta", {}) or {}
+                    content = delta.get("content", "") or ""
+                    if content:
+                        yield content
+                    for tc in delta.get("tool_calls", []):
+                        idx = tc["index"]
+                        if idx not in tool_calls_acc:
+                            tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
+                        if tc.get("id"):
+                            tool_calls_acc[idx]["id"] = tc["id"]
+                        if tc.get("function", {}).get("name"):
+                            tool_calls_acc[idx]["name"] = tc["function"]["name"]
+                        if tc.get("function", {}).get("arguments"):
+                            tool_calls_acc[idx]["arguments"] += tc["function"]["arguments"]
+                if tool_calls_acc:
+                    self._last_tool_calls = [
+                        ToolCallRequest(id=tc["id"], name=tc["name"], arguments=tc["arguments"])
+                        for _, tc in sorted(tool_calls_acc.items())
+                    ]

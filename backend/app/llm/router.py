@@ -1,6 +1,7 @@
+from __future__ import annotations
 import logging
 from typing import Optional
-from app.llm.base import LLMProvider
+from app.llm.base import LLMProvider, LLMResponse
 from app.llm.providers import OpenAIProvider, GroqProvider, GeminiProvider, AnthropicProvider, OllamaProvider, OpenRouterProvider, OmniRouteProvider
 from app.core.config import settings
 
@@ -46,6 +47,15 @@ class LLMRouter:
     async def chat_stream(self, messages: list[dict], provider: Optional[str] = None, temperature: float = 0.7, max_tokens: int = 4096):
         p = self.get_provider(provider)
         async for chunk in p.chat_stream(messages, temperature, max_tokens):
+            yield chunk
+
+    async def chat_with_tools(self, messages: list[dict], provider: Optional[str] = None, temperature: float = 0.7, max_tokens: int = 4096, tools: list[dict] | None = None) -> LLMResponse:
+        p = self.get_provider(provider)
+        return await p.chat_with_tools(messages, temperature, max_tokens, tools)
+
+    async def chat_stream_with_tools(self, messages: list[dict], provider: Optional[str] = None, temperature: float = 0.7, max_tokens: int = 4096, tools: list[dict] | None = None):
+        p = self.get_provider(provider)
+        async for chunk in p.chat_stream_with_tools(messages, temperature, max_tokens, tools):
             yield chunk
 
     def list_providers(self) -> list[str]:

@@ -1,42 +1,42 @@
+from __future__ import annotations
 import asyncio
 import json
 import logging
 import re
 import time
 from datetime import datetime
-from typing import Optional, AsyncGenerator, List, Dict, Any
+from typing import Optional
 from app.models.agent import Agent, AgentStatus
 from app.services.lifecycle import LifecycleEngine
 from app.models.message import Message
 from app.models.ops import ExecutionLog
 from app.llm import llm_router
+from app.llm.base import ToolCallRequest
 from app.core.event_bus import event_bus
-from app.db.repository import save_agent, save_message, save_execution_log, load_memories, search_memories
-from app.workspace.manager import write_file, read_file, list_files, get_file_tree
+from app.db.repository import save_message, save_execution_log, load_memories, search_memories
+from app.tools.registry import tool_registry
 
 logger = logging.getLogger(__name__)
 
 
 ACTION_PATTERN = re.compile(r'\[ACTION\](.*?)\[/ACTION\]', re.DOTALL)
 
-_TOOL_REGISTRY = {
+_TOOL_HANDLERS = {
+    "web_search": lambda: __import__("app.services.tools.web_search", fromlist=["search"]).search,
     "browse": lambda: __import__("app.services.tools.browser", fromlist=["browse"]).browse,
     "screenshot": lambda: __import__("app.services.tools.browser", fromlist=["screenshot"]).screenshot,
     "run_python": lambda: __import__("app.services.tools.code_exec", fromlist=["run_python"]).run_python,
     "run_shell": lambda: __import__("app.services.tools.code_exec", fromlist=["run_shell"]).run_shell,
-    "get_repo": lambda: __import__("app.services.tools.github_integration", fromlist=["get_repo"]).get_repo,
-    "search_repos": lambda: __import__("app.services.tools.github_integration", fromlist=["search_repos"]).search_repos,
-    "get_file_content": lambda: __import__("app.services.tools.github_integration", fromlist=["get_file_content"]).get_file_content,
-    "create_issue": lambda: __import__("app.services.tools.github_integration", fromlist=["create_issue"]).create_issue,
     "http_get": lambda: __import__("app.services.tools.api_http", fromlist=["http_get"]).http_get,
     "http_post": lambda: __import__("app.services.tools.api_http", fromlist=["http_post"]).http_post,
     "http_put": lambda: __import__("app.services.tools.api_http", fromlist=["http_put"]).http_put,
     "http_delete": lambda: __import__("app.services.tools.api_http", fromlist=["http_delete"]).http_delete,
-    "web_search": lambda: __import__("app.services.tools.web_search", fromlist=["search"]).search,
+    "get_repo": lambda: __import__("app.services.tools.github_integration", fromlist=["get_repo"]).get_repo,
+    "search_repos": lambda: __import__("app.services.tools.github_integration", fromlist=["search_repos"]).search_repos,
+    "get_file_content": lambda: __import__("app.services.tools.github_integration", fromlist=["get_file_content"]).get_file_content,
+    "create_issue": lambda: __import__("app.services.tools.github_integration", fromlist=["create_issue"]).create_issue,
 }
 
-# ponytail: USD per 1K tokens (input, output). Heuristic token counts (~chars/4),
-# not exact provider usage; upgrade path is to read real usage from provider responses.
 _PRICING = {
     "gpt-4o-mini": (0.00015, 0.0006),
     "gpt-4o": (0.005, 0.015),
@@ -51,14 +51,11 @@ def _estimate_tokens(text: str) -> int:
 
 
 def _estimate_cost(model: str, in_tok: int, out_tok: int) -> float:
-    rate = None
     for key, r in _PRICING.items():
         if key in (model or ""):
-            rate = r
-            break
-    if not rate:
-        return 0.0
-    return round((in_tok / 1000) * rate[0] + (out_tok / 1000) * rate[1], 6)
+            return round((in_tok / 1000) * r[0] + (out_tok / 1000) * r[1], 6)
+    return 0.0
+
 
 class BaseAgent:
     def __init__(self, agent: Agent):
@@ -99,76 +96,101 @@ class BaseAgent:
     async def set_status(self, new_status: AgentStatus, reason: str = "") -> bool:
         return await self._lifecycle.transition_to(new_status, reason)
 
-    def _parse_actions(self, text: str) -> List[Dict[str, Any]]:
+    def _parse_action_blocks(self, text: str) -> list[dict]:
         actions = []
         for match in ACTION_PATTERN.finditer(text):
             try:
                 actions.append(json.loads(match.group(1).strip()))
             except json.JSONDecodeError:
-                logger.warning("Failed to parse action: %s", match.group(1)[:100])
+                logger.warning("Failed to parse [ACTION]: %s", match.group(1)[:100])
         return actions
 
-    async def _execute_file_action(self, action: Dict[str, Any], project_id: str) -> Optional[str]:
-        atype = action.get("type")
-        if atype == "write_file":
-            result = await write_file(project_id, action["path"], action["content"])
-            return f"Created {action['path']} ({result['size']} bytes)"
-        elif atype == "read_file":
-            content = await read_file(project_id, action["path"])
-            return content
-        elif atype == "list_files":
-            files = await list_files(project_id)
-            return "\n".join(f"{f['path']} ({f['size']} bytes)" for f in files)
-        return None
+    def _parse_actions_to_tool_calls(self, text: str) -> list[ToolCallRequest]:
+        actions = self._parse_action_blocks(text)
+        tcs = []
+        for i, a in enumerate(actions):
+            tcs.append(ToolCallRequest(
+                id=f"action_{i}",
+                name=a.get("type", "unknown"),
+                arguments=json.dumps({k: v for k, v in a.items() if k != "type"}),
+            ))
+        return tcs
 
-    async def execute_tool(self, tool_name: str, params: dict) -> dict:
-        fn = _TOOL_REGISTRY.get(tool_name)
-        if not fn:
-            return {"error": f"Unknown tool: {tool_name}"}
+    async def execute_tool(self, tool_name: str, params: dict) -> str:
+        fn = _TOOL_HANDLERS.get(tool_name)
+        if fn:
+            try:
+                result = await fn()(**params)
+                return json.dumps(result) if not isinstance(result, str) else result
+            except Exception as e:
+                logger.exception("External tool %s failed", tool_name)
+                return json.dumps({"error": str(e)})
+        return json.dumps({"error": f"Unknown tool: {tool_name}"})
+
+    async def _handle_tool_call(self, tc: ToolCallRequest, project_id: str) -> str:
         try:
-            return await fn()(**params)
-        except Exception as e:
-            logger.exception("Tool %s failed", tool_name)
-            return {"error": str(e)}
+            params = json.loads(tc.arguments) if tc.arguments else {}
+        except json.JSONDecodeError:
+            params = {}
+        await event_bus.publish("tool_call_start", {
+            "agent_id": self.id, "agent_name": self.name,
+            "tool_name": tc.name, "arguments": tc.arguments,
+            "tool_call_id": tc.id, "project_id": project_id,
+        })
+        result = await self.execute_tool(tc.name, params)
+        await event_bus.publish("tool_call_result", {
+            "agent_id": self.id, "agent_name": self.name,
+            "tool_name": tc.name, "result": result[:500] if result else "",
+            "tool_call_id": tc.id, "project_id": project_id,
+        })
+        return result
 
-    async def think(self, prompt: str, temperature: Optional[float] = None) -> str:
-        await self.set_status(AgentStatus.thinking)
+    def _tools_for_provider(self) -> list[dict]:
+        return tool_registry.to_openai_schemas()
+
+    def _build_messages(self, prompt: str) -> list[dict]:
         memory_block = ""
         if self.agent.memory.get("facts"):
             memory_block = "\nMemory:\n" + "\n".join(
                 f"- {k}: {v}" for k, v in self.agent.memory["facts"].items()
             )
+        return [
+            {"role": "system", "content": self._system_prompt() + memory_block},
+            *self.agent.chat_history[-100:],
+            {"role": "user", "content": prompt},
+        ]
+
+    async def _enrich_with_memories(self, prompt: str) -> str:
+        block = ""
         try:
             memories = await search_memories(self.agent.project_id, prompt, limit=5, agent_id=self.id)
             if not memories:
                 memories = await load_memories(self.agent.project_id, self.id, limit=20)
             if memories:
-                memory_block += "\nRecall:\n" + "\n".join(
-                    f"[{m.type}] {m.content[:200]}" for m in memories
-                )
+                block = "\nRecall:\n" + "\n".join(f"[{m.type}] {m.content[:200]}" for m in memories)
         except Exception:
             pass
-        messages = [
-            {"role": "system", "content": self._system_prompt() + memory_block},
-            *self.agent.chat_history[-100:],
-            {"role": "user", "content": prompt},
-        ]
+        return block
+
+    async def think(self, prompt: str, temperature: Optional[float] = None) -> str:
+        await self.set_status(AgentStatus.thinking)
+        messages = self._build_messages(prompt)
+        recall = await self._enrich_with_memories(prompt)
+        if recall:
+            messages[0]["content"] += recall
         _t0 = time.perf_counter()
         _status = "completed"
         try:
             provider = llm_router.get_provider(self.agent.provider)
             if not provider:
                 raise RuntimeError("No LLM provider configured")
-            response = await provider.chat(
-                messages,
-                temperature=temperature or self.agent.temperature,
-            )
+            response = await provider.chat(messages, temperature=temperature or self.agent.temperature)
             if response.startswith("["):
                 raise RuntimeError(f"Provider error: {response}")
         except Exception as e:
             logger.error("Agent %s think error: %s", self.name, e)
             _status = "failed"
-            response = f"I received your request but the LLM service is currently unavailable. Please ensure the configured provider ({self.agent.provider}) is running and accessible."
+            response = "I received your request but the LLM service is currently unavailable."
         await self._log_execution(prompt, response, _status, int((time.perf_counter() - _t0) * 1000))
         self.agent.chat_history.append({"role": "user", "content": prompt})
         self.agent.chat_history.append({"role": "assistant", "content": response})
@@ -178,65 +200,104 @@ class BaseAgent:
 
     async def think_stream(self, prompt: str, temperature: Optional[float] = None):
         await self.set_status(AgentStatus.thinking)
-        memory_block = ""
-        if self.agent.memory.get("facts"):
-            memory_block = "\nMemory:\n" + "\n".join(
-                f"- {k}: {v}" for k, v in self.agent.memory["facts"].items()
-            )
-        try:
-            memories = await search_memories(self.agent.project_id, prompt, limit=5, agent_id=self.id)
-            if not memories:
-                memories = await load_memories(self.agent.project_id, self.id, limit=20)
-            if memories:
-                memory_block += "\nRecall:\n" + "\n".join(
-                    f"[{m.type}] {m.content[:200]}" for m in memories
-                )
-        except Exception:
-            pass
-        messages = [
-            {"role": "system", "content": self._system_prompt() + memory_block},
-            *self.agent.chat_history[-100:],
-            {"role": "user", "content": prompt},
-        ]
+        messages = self._build_messages(prompt)
+        recall = await self._enrich_with_memories(prompt)
+        if recall:
+            messages[0]["content"] += recall
         full_response = ""
         try:
             async for chunk in llm_router.chat_stream(
-                messages,
-                provider=self.agent.provider,
+                messages, provider=self.agent.provider,
                 temperature=temperature or self.agent.temperature,
             ):
                 full_response += chunk
                 await event_bus.publish("stream_chunk", {
-                    "agent_id": self.id,
-                    "agent_name": self.name,
+                    "agent_id": self.id, "agent_name": self.name,
                     "agent_role": str(self.role),
                     "project_id": self.agent.project_id,
-                    "content": chunk,
-                    "done": False,
+                    "content": chunk, "done": False,
                 })
                 yield chunk
             self.agent.chat_history.append({"role": "user", "content": prompt})
             self.agent.chat_history.append({"role": "assistant", "content": full_response})
             await event_bus.publish("stream_chunk", {
-                "agent_id": self.id,
-                "agent_name": self.name,
+                "agent_id": self.id, "agent_name": self.name,
                 "agent_role": str(self.role),
                 "project_id": self.agent.project_id,
-                "content": "",
-                "done": True,
+                "content": "", "done": True,
             })
         except Exception as e:
-            # ponytail: tunnel/LLM flake mid-stream — don't inject raw error text
-            # into the user's reply; keep whatever good tokens we already streamed.
             logger.error("Agent %s stream error: %s", self.name, e)
             await event_bus.publish("stream_chunk", {
-                "agent_id": self.id,
-                "agent_name": self.name,
+                "agent_id": self.id, "agent_name": self.name,
                 "agent_role": str(self.role),
                 "project_id": self.agent.project_id,
-                "content": "",
-                "done": True,
+                "content": "", "done": True,
             })
+        await self.set_status(AgentStatus.idle)
+
+    async def think_with_tools(self, prompt: str, temperature: Optional[float] = None):
+        await self.set_status(AgentStatus.thinking)
+        provider = llm_router.get_provider(self.agent.provider)
+        use_native = provider and provider.supports_tools
+        tools = self._tools_for_provider() if use_native else []
+
+        messages = self._build_messages(prompt)
+        recall = await self._enrich_with_memories(prompt)
+        if recall:
+            messages[0]["content"] += recall
+        max_iterations = 10
+        full_response = ""
+        first_content = True
+
+        for iteration in range(max_iterations):
+            _t0 = time.perf_counter()
+            content = ""
+            tool_calls: list[ToolCallRequest] = []
+
+            try:
+                if use_native:
+                    async for chunk in provider.chat_stream_with_tools(
+                        messages, temperature=temperature or self.agent.temperature,
+                        max_tokens=4096, tools=tools,
+                    ):
+                        if chunk:
+                            content += chunk
+                            if first_content:
+                                full_response = content
+                                first_content = False
+                            yield chunk
+                    tool_calls = provider._last_tool_calls
+                else:
+                    response = await provider.chat(
+                        messages, temperature=temperature or self.agent.temperature,
+                    )
+                    action_tcs = self._parse_actions_to_tool_calls(response)
+                    content = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', response, flags=re.DOTALL).strip()
+                    if content:
+                        yield content
+                    tool_calls = action_tcs
+            except Exception as e:
+                logger.error("Agent %s think_with_tools iteration %d error: %s", self.name, iteration, e)
+                if iteration == 0:
+                    yield "I encountered an error processing your request. Please try again."
+                break
+
+            await self._log_execution(prompt if iteration == 0 else f"[tool iteration {iteration}]", content, "completed", int((time.perf_counter() - _t0) * 1000))
+
+            if not tool_calls:
+                if not content and iteration > 0:
+                    yield "Done."
+                break
+
+            for tc in tool_calls:
+                result = await self._handle_tool_call(tc, self.agent.project_id)
+                messages.append({"role": "tool", "tool_call_id": tc.id, "content": result or "Done."})
+
+        self.agent.chat_history.append({"role": "user", "content": prompt})
+        self.agent.chat_history.append({"role": "assistant", "content": full_response or content})
+        if full_response or content:
+            self.agent.memory["short_term"].append({"prompt": prompt, "response": full_response or content})
         await self.set_status(AgentStatus.idle)
 
     async def _log_execution(self, prompt: str, response: str, status: str, latency_ms: int):
@@ -245,14 +306,10 @@ class BaseAgent:
             out_tok = _estimate_tokens(response)
             log = ExecutionLog(
                 project_id=self.agent.project_id,
-                agent_id=self.id,
-                agent_name=self.name,
-                action="llm_call",
-                model=self.agent.model,
-                provider=self.agent.provider,
-                status=status,
-                input_tokens=in_tok,
-                output_tokens=out_tok,
+                agent_id=self.id, agent_name=self.name,
+                action="llm_call", model=self.agent.model,
+                provider=self.agent.provider, status=status,
+                input_tokens=in_tok, output_tokens=out_tok,
                 total_tokens=in_tok + out_tok,
                 cost_usd=_estimate_cost(self.agent.model, in_tok, out_tok),
                 latency_ms=latency_ms,
@@ -266,15 +323,10 @@ class BaseAgent:
 
     async def send_message(self, project_id: str, content: str, msg_type: str = "chat", mentions: Optional[list[str]] = None, channel: str = "general", thread_id: Optional[str] = None):
         msg = Message(
-            project_id=project_id,
-            sender_id=self.id,
-            sender_name=self.name,
-            sender_role=str(self.agent.role),
-            content=content,
-            msg_type=msg_type,
-            mentions=mentions or [],
-            channel=channel,
-            thread_id=thread_id,
+            project_id=project_id, sender_id=self.id,
+            sender_name=self.name, sender_role=str(self.agent.role),
+            content=content, msg_type=msg_type,
+            mentions=mentions or [], channel=channel, thread_id=thread_id,
         )
         await event_bus.publish("message", msg.model_dump())
         asyncio.create_task(save_message(msg))
@@ -300,5 +352,4 @@ class BaseAgent:
             "You communicate naturally with your teammates like a human coworker.\n"
             "Be concise, professional, and collaborative.\n"
             "You can ask questions, suggest ideas, report progress, request reviews, and help others.\n"
-            "When writing files, use [ACTION] blocks: [ACTION]{\"type\":\"write_file\",\"path\":\"...\",\"content\":\"...\"}[/ACTION]"
         )

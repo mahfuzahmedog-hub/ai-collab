@@ -1,3 +1,4 @@
+from __future__ import annotations
 import asyncio
 import json
 import logging
@@ -203,6 +204,14 @@ Rules:
 - Always include a short plain-text message explaining what you created."""
 
 
+_SYSTEM_ACTIONS = {
+    "create_agent", "evolve_agent", "merge_agents", "split_agent", "retire_agent",
+    "create_channel", "create_subchannel", "rename_channel", "move_channel", "delete_channel",
+    "create_thread", "register_tool", "remove_tool", "create_knowledge_base", "remember_fact",
+    "create_task", "write_file", "read_file", "list_files",
+}
+
+
 class CoworkerAgent(BaseAgent):
     def __init__(self, agent: Agent):
         super().__init__(agent)
@@ -218,10 +227,7 @@ class CoworkerAgent(BaseAgent):
         self.project = project
         self.agent.project_id = project.id
         asyncio.create_task(save_project(project))
-        await self.send_message(project.id, f"🚀 Project '{project.title}' initialized. I am your Coworker Agent, {self.name}. Let me analyze this and set things up.", msg_type="system")
-
-    def _parse_actions(self, text: str) -> list[dict]:
-        return super()._parse_actions(text)
+        await self.send_message(project.id, f"Project '{project.title}' initialized. I am your Coworker Agent, {self.name}. Let me analyze this and set things up.", msg_type="system")
 
     def _parse_instructions(self, text: str) -> list[dict]:
         actions = []
@@ -232,17 +238,14 @@ class CoworkerAgent(BaseAgent):
                 logger.warning("Failed to parse instruction: %s", match.group(1)[:100])
         return actions
 
-    async def _require_approval(self, action: dict, channel: str) -> bool:
-        """Return True if the action needs approval and was deferred."""
+    def _require_approval_sensitive(self, action: dict, channel: str) -> bool:
         sensitive = {"retire_agent", "delete_channel"}
         if action.get("type") not in sensitive:
             return False
         from app.db.repository import save_approval, save_notification
         from app.models.ops import Approval, Notification
         a = Approval(
-            project_id=self.project.id,
-            agent_id=self.id,
-            agent_name=self.name,
+            project_id=self.project.id, agent_id=self.id, agent_name=self.name,
             action=action.get("type", ""),
             description=f"Requested: {json.dumps(action, default=str)[:300]}",
             payload=action,
@@ -257,55 +260,62 @@ class CoworkerAgent(BaseAgent):
         )
         asyncio.create_task(save_notification(n))
         await event_bus.publish("notification", n.model_dump())
-        await self.send_message(self.project.id, f"⏳ I need your approval to {a.action}. Check your notifications.", channel=channel)
+        await self.send_message(self.project.id, f"I need your approval to {a.action}. Check your notifications.", channel=channel)
         return True
+
+    async def execute_tool(self, tool_name: str, params: dict) -> str:
+        if tool_name in _SYSTEM_ACTIONS:
+            result = await self._execute_action({"type": tool_name, **params}, "general")
+            return result or f"Executed {tool_name}."
+        return await super().execute_tool(tool_name, params)
 
     async def _execute_action(self, action: dict, channel: str = "general"):
         t = action.get("type")
-        if await self._require_approval(action, channel):
-            return
+        if self._require_approval_sensitive(action, channel):
+            return "Approval requested."
         if t == "create_agent":
-            role_name = action.get("role", "backend_engineer")
             await self.create_team([{
-                "role": role_name,
+                "role": action.get("role", "backend_engineer"),
                 "name": action.get("name"),
                 "skills": action.get("skills"),
                 "personality": action.get("personality"),
                 "display_name": action.get("display_name"),
                 "mission": action.get("mission"),
-                "reporting_structure": action.get("reporting_structure"),
                 "channel": action.get("channel"),
             }], announce_channel=channel)
+            return f"Agent {action.get('name')} created."
         elif t == "create_channel":
             name = action.get("name", "untitled")
-            channel = Channel(
+            ch = Channel(
                 id=action.get("id") or _channel_slug(name),
-                project_id=self.project.id,
-                name=name,
+                project_id=self.project.id, name=name,
                 parent_id=_channel_slug(action["parent_id"]) if action.get("parent_id") else None,
                 type=action.get("channel_type", "channel"),
                 sort_order=action.get("sort_order", 0),
             )
-            asyncio.create_task(save_channel(channel))
-            await event_bus.publish("channel_created", {**channel.model_dump(), "channel_type": channel.type})
+            asyncio.create_task(save_channel(ch))
+            await event_bus.publish("channel_created", {**ch.model_dump(), "channel_type": ch.type})
+            return f"Channel '{name}' created."
         elif t == "create_subchannel":
             name = action.get("name", "untitled")
-            channel = Channel(
+            ch = Channel(
                 id=action.get("id") or _channel_slug(name),
-                project_id=self.project.id,
-                name=name,
+                project_id=self.project.id, name=name,
                 parent_id=_channel_slug(action["parent_id"]) if action.get("parent_id") else None,
                 type=action.get("channel_type", "channel"),
                 sort_order=action.get("sort_order", 1),
             )
-            asyncio.create_task(save_channel(channel))
-            await event_bus.publish("channel_created", {**channel.model_dump(), "channel_type": channel.type})
+            asyncio.create_task(save_channel(ch))
+            await event_bus.publish("channel_created", {**ch.model_dump(), "channel_type": ch.type})
+            return f"Sub-channel '{name}' created."
         elif t == "rename_channel":
             from app.db.repository import rename_channel
             cid = _channel_slug(action.get("id") or action.get("channel") or "")
             new_name = action.get("name", "")
             if cid and new_name and await rename_channel(self.project.id, cid, new_name):
                 await event_bus.publish("channel_renamed", {"project_id": self.project.id, "id": cid, "name": new_name})
+                return f"Channel renamed to '{new_name}'."
+            return "Rename failed."
         elif t == "move_channel":
             from app.db.repository import move_channel
             cid = _channel_slug(action.get("id") or action.get("channel") or "")
@@ -313,6 +323,8 @@ class CoworkerAgent(BaseAgent):
             parent_id = _channel_slug(parent) if parent else None
             if cid and await move_channel(self.project.id, cid, parent_id):
                 await event_bus.publish("channel_moved", {"project_id": self.project.id, "id": cid, "parent_id": parent_id})
+                return "Channel moved."
+            return "Move failed."
         elif t == "delete_channel":
             from app.db.repository import delete_channel
             cid = _channel_slug(action.get("id") or action.get("channel") or "")
@@ -320,35 +332,35 @@ class CoworkerAgent(BaseAgent):
                 deleted = await delete_channel(self.project.id, cid)
                 if deleted:
                     await event_bus.publish("channel_deleted", {"project_id": self.project.id, "ids": deleted})
+                    return f"Deleted {len(deleted)} channel(s)."
+            return "Delete failed."
         elif t == "create_thread":
             thread = Thread(
                 project_id=self.project.id,
                 parent_message_id=action.get("parent_message_id", ""),
-                title=action.get("title", ""),
-                channel=action.get("channel", "general"),
+                title=action.get("title", ""), channel=action.get("channel", "general"),
                 created_by=self.id,
             )
             asyncio.create_task(save_thread(thread))
             await event_bus.publish("thread_created", thread.model_dump())
+            return f"Thread '{action.get('title')}' created."
         elif t == "evolve_agent":
             agent_id = action.get("agent_id", "")
             if agent_id in self.team:
                 w = self.team[agent_id]
-                new_skills = action.get("skills")
-                if new_skills:
-                    w.agent.skills = list(set(w.agent.skills + new_skills))
-                new_personality = action.get("personality")
-                if new_personality:
-                    w.agent.personality = new_personality
-                new_mission = action.get("mission")
-                if new_mission:
-                    w.agent.mission = new_mission
-                new_channel = action.get("channel")
-                if new_channel:
-                    w.agent.channel = new_channel
+                if action.get("skills"):
+                    w.agent.skills = list(set(w.agent.skills + action["skills"]))
+                if action.get("personality"):
+                    w.agent.personality = action["personality"]
+                if action.get("mission"):
+                    w.agent.mission = action["mission"]
+                if action.get("channel"):
+                    w.agent.channel = action["channel"]
                 w.agent.version = str(float(w.agent.version) + 0.1) if w.agent.version else "1.1"
                 asyncio.create_task(save_agent(w.agent))
                 await event_bus.publish("agent_updated", w.agent.model_dump())
+                return f"Agent {w.name} evolved."
+            return "Agent not found."
         elif t == "merge_agents":
             keep_id = action.get("keep_id", "")
             absorb_id = action.get("absorb_id", "")
@@ -362,6 +374,8 @@ class CoworkerAgent(BaseAgent):
                 asyncio.create_task(save_agent(keep.agent))
                 await event_bus.publish("agent_updated", keep.agent.model_dump())
                 await event_bus.publish("agent_removed", {"agent_id": absorb_id, "agent_name": absorb.name, "project_id": self.project.id})
+                return f"Merged {absorb.name} into {keep.name}."
+            return "Merge failed."
         elif t == "split_agent":
             source_id = action.get("source_id", "")
             new_name = action.get("new_name", "Split-Agent")
@@ -372,52 +386,51 @@ class CoworkerAgent(BaseAgent):
                 new_agent = Agent(
                     name=new_name, role=new_role, project_id=self.project.id,
                     skills=new_skills, personality=source.agent.personality,
-                    channel=source.agent.channel,
-                    provider=source.agent.provider,
+                    channel=source.agent.channel, provider=source.agent.provider,
                 )
                 new_worker = WorkerAgent(new_agent)
                 self.team[new_agent.id] = new_worker
                 self.project.agent_ids.append(new_agent.id)
                 asyncio.create_task(save_agent(new_agent))
                 await event_bus.publish("agent_created", new_agent.model_dump())
+                return f"Agent {new_name} split from {source.name}."
+            return "Split failed."
         elif t == "retire_agent":
             agent_id = action.get("agent_id", "")
             if agent_id in self.team:
                 removed = self.team.pop(agent_id)
                 await removed.set_status(AgentStatus.retired, "Agent retired")
                 self.project.agent_ids = [aid for aid in self.project.agent_ids if aid != agent_id]
-                await event_bus.publish("agent_removed", {
-                    "agent_id": agent_id,
-                    "agent_name": removed.name,
-                    "project_id": self.project.id,
-                })
-        elif t == "add_tool":
+                await event_bus.publish("agent_removed", {"agent_id": agent_id, "agent_name": removed.name, "project_id": self.project.id})
+                return f"Agent {removed.name} retired."
+            return "Agent not found."
+        elif t == "add_tool" or t == "register_tool":
             tool_name = action.get("name", "tool")
-            tool_desc = action.get("description", "")
-            tool_config = action.get("config", {})
-            entry = {"description": tool_desc, "config": tool_config, "enabled": True}
+            entry = {"description": action.get("description", ""), "config": action.get("config", {}), "enabled": True}
             asyncio.create_task(save_knowledge_base_entry(self.project.id, "_tools", tool_name, entry))
             await self.send_message(self.project.id, f"Tool '{tool_name}' registered.", channel=channel)
+            return f"Tool '{tool_name}' registered."
         elif t == "remove_tool":
             tool_name = action.get("name", "")
             if tool_name:
-                # Store a tombstone
                 asyncio.create_task(save_knowledge_base_entry(self.project.id, "_tools", tool_name, {"enabled": False}))
                 await self.send_message(self.project.id, f"Tool '{tool_name}' removed.", channel=channel)
+                return f"Tool '{tool_name}' removed."
+            return "No tool name given."
         elif t == "create_knowledge_base":
             name = action.get("name", "default")
             asyncio.create_task(save_knowledge_base_entry(self.project.id, name, "_created", "true"))
             await self.send_message(self.project.id, f"Knowledge base '{name}' created.", channel=channel)
-        elif t == "remember":
+            return f"Knowledge base '{name}' created."
+        elif t == "remember" or t == "remember_fact":
             key = action.get("key", "")
             value = action.get("value", "")
             if key and value:
                 if "facts" not in self.agent.memory:
                     self.agent.memory["facts"] = {}
                 self.agent.memory["facts"][key] = value
-        elif t == "execute_tool":
-            result = await self.execute_tool(action.get("name", ""), action.get("params", {}))
-            await self.send_message(self.project.id, f"Tool '{action.get('name')}' result:\n{result}", channel=channel)
+                return f"Remembered: {key} = {value}"
+            return "No key/value provided."
         elif t == "create_task":
             assign_to = action.get("assign_to", "")
             assigned_role = None
@@ -433,15 +446,38 @@ class CoworkerAgent(BaseAgent):
                 priority = TaskPriority(action.get("priority", "medium"))
             except ValueError:
                 pass
-            await self.create_task(
+            task = await self.create_task(
                 title=action.get("title", "Untitled"),
                 description=action.get("description", ""),
-                priority=priority,
-                assigned_role=assigned_role,
+                priority=priority, assigned_role=assigned_role,
             )
+            return f"Task '{task.title}' created."
+        elif t == "write_file":
+            path = action.get("path", "")
+            content = action.get("content", "")
+            if path and content:
+                from app.workspace.manager import write_file as ws_write
+                result = await ws_write(self.project.id, path, content)
+                return f"Created {path} ({result['size']} bytes)"
+            return "No path/content provided."
+        elif t == "read_file":
+            path = action.get("path", "")
+            if path:
+                from app.workspace.manager import read_file as ws_read
+                try:
+                    content = await ws_read(self.project.id, path)
+                    return f"Read {path}: {content[:500]}"
+                except FileNotFoundError:
+                    return f"File not found: {path}"
+            return "No path provided."
+        elif t == "list_files":
+            from app.workspace.manager import list_files as ws_list
+            files = await ws_list(self.project.id)
+            return "\n".join(f"{f['path']} ({f['size']} bytes)" for f in files)
+        else:
+            return f"Unknown action type: {t}"
 
     async def handle_user_request(self, project_id: str, user_message: str, channel: str = "general"):
-        # Check for [INSTRUCTION] blocks (direct commands, bypass LLM)
         instruction_actions = self._parse_instructions(user_message)
         if instruction_actions:
             clean_msg = re.sub(r'\[INSTRUCTION\].*?\[/INSTRUCTION\]', '', user_message, flags=re.DOTALL).strip()
@@ -458,41 +494,30 @@ class CoworkerAgent(BaseAgent):
 Current project: {self.project.title if self.project else 'No project'}
 Team members: {team_info}
 
-Respond professionally as the Coworker Agent. If the user is asking for work to be done, delegate to the appropriate team member via [ACTION] blocks. If they're asking a question in a specific channel, answer it."""
+Respond professionally as the Coworker Agent. If the user is asking for work to be done, delegate to the appropriate team member. If they're asking a question, answer it."""
 
         response = ""
-        async for chunk in self.think_stream(prompt):
+        async for chunk in self.think_with_tools(prompt):
             response += chunk
-        if not response.strip():
-            response = "I received your message but the LLM service is temporarily unavailable. Please try again in a moment."
-        actions = self._parse_actions(response)
-        clean = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', response, flags=re.DOTALL).strip()
-        if not clean:
-            clean = "Executed: " + ", ".join(a.get("type", "action") for a in actions) if actions else response
-        await self.send_message(project_id, clean, channel=channel)
-        for action in actions:
-            await self._execute_action(action, channel)
+        clean = response.strip()
+        if clean:
+            await self.send_message(project_id, clean, channel=channel)
+        elif not instruction_actions:
+            await self.send_message(project_id, "Executed requested actions.", channel=channel)
 
     async def create_team(self, required_roles: list[dict], announce_channel: str = "general"):
         if not self.project:
             return
-
         await self.send_message(self.project.id, f"Building team for '{self.project.title}'...", msg_type="system", channel=announce_channel)
-
         for role_info in required_roles:
             role = role_info.get("role", "backend")
             name = role_info.get("name", f"{role.title()}-{len(self.team) + 1}")
             skills = role_info.get("skills", [role])
-
             agent_model = Agent(
-                name=name,
-                role=role,
-                project_id=self.project.id,
-                skills=skills,
-                personality=role_info.get("personality", "professional and collaborative"),
+                name=name, role=role, project_id=self.project.id,
+                skills=skills, personality=role_info.get("personality", "professional and collaborative"),
                 display_name=role_info.get("display_name") or name,
                 mission=role_info.get("mission"),
-                reporting_structure=role_info.get("reporting_structure"),
                 channel=role_info.get("channel") or "general",
                 provider=settings.llm_default_provider,
             )
@@ -503,44 +528,27 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
             self.project.agent_ids.append(agent_model.id)
             asyncio.create_task(save_agent(agent_model))
             await event_bus.publish("agent_created", agent_model.model_dump())
-
             greeting_channel = agent_model.channel or "general"
             await worker.send_message(self.project.id, f"Hello team! I'm {name}, your {role}. Ready to contribute!", channel=greeting_channel)
             await asyncio.sleep(0.5)
-
-        await self.send_message(
-            self.project.id,
-            f"Team created with {len(self.team)} members. Let's start working!",
-            msg_type="system",
-            channel=announce_channel,
-        )
+        await self.send_message(self.project.id, f"Team created with {len(self.team)} members. Let's start working!", msg_type="system", channel=announce_channel)
 
     async def create_task(self, title: str, description: str = "", priority: TaskPriority = TaskPriority.medium, assigned_role: Optional[str] = None) -> Task:
         task = Task(
-            project_id=self.project.id,
-            title=title,
-            description=description,
-            priority=priority,
-            assigned_by=self.id,
+            project_id=self.project.id, title=title,
+            description=description, priority=priority, assigned_by=self.id,
         )
         self.tasks[task.id] = task
         self.project.task_ids.append(task.id)
-
         if assigned_role:
             for agent_id, worker in self.team.items():
                 if worker.agent.role == assigned_role or assigned_role in worker.agent.skills:
                     task.assigned_to = agent_id
                     task.status = TaskStatus.assigned
                     worker.assign_task(task)
-                    await self.send_message(
-                        self.project.id,
-                        f"📌 {worker.name}: I'm assigning you '{task.title}'.\n{description}",
-                        mentions=[worker.name],
-                        channel=worker.agent.channel,
-                    )
+                    await self.send_message(self.project.id, f" {worker.name}: I'm assigning you '{task.title}'.\n{description}", mentions=[worker.name], channel=worker.agent.channel)
                     asyncio.create_task(worker.work_on_task())
                     break
-
         await event_bus.publish("task_created", task.model_dump())
         asyncio.create_task(save_task(task))
         if assigned_role and self.team:
@@ -548,11 +556,7 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
             from app.models.ops import Notification
             for wid, w in self.team.items():
                 if w.agent.role == assigned_role or assigned_role in w.agent.skills:
-                    n = Notification(
-                        project_id=self.project.id, type="task",
-                        title=f"New task: {task.title}",
-                        body=description or task.title, link=f"task://{task.id}",
-                    )
+                    n = Notification(project_id=self.project.id, type="task", title=f"New task: {task.title}", body=description or task.title, link=f"task://{task.id}")
                     asyncio.create_task(save_notification(n))
                     await event_bus.publish("notification", n.model_dump())
                     break
@@ -565,31 +569,19 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
             task.assigned_to = agent_id
             task.status = TaskStatus.assigned
             worker.assign_task(task)
-            await self.send_message(
-                self.project.id,
-                f"➡️ {worker.name}: Taking over '{task.title}'.",
-                mentions=[worker.name],
-                channel=worker.agent.channel,
-            )
+            await self.send_message(self.project.id, f" {worker.name}: Taking over '{task.title}'.", mentions=[worker.name], channel=worker.agent.channel)
 
     async def review_progress(self):
         if not self.project:
             return
-
         status_counts = {}
         for t in self.tasks.values():
             status_counts[t.status.value] = status_counts.get(t.status.value, 0) + 1
-
-        progress_summary = f"📊 Progress Update:\n" + "\n".join(f"  {s}: {c}" for s, c in status_counts.items())
-        await self.send_message(self.project.id, progress_summary, msg_type="system")
-
+        progress = "Progress Update:\n" + "\n".join(f"  {s}: {c}" for s, c in status_counts.items())
+        await self.send_message(self.project.id, progress, msg_type="system")
         blocked = [t for t in self.tasks.values() if t.status == TaskStatus.blocked]
         for task in blocked:
-            await self.send_message(
-                self.project.id,
-                f"⚠️ Task '{task.title}' is blocked. Let me find a solution.",
-                msg_type="system",
-            )
+            await self.send_message(self.project.id, f"Task '{task.title}' is blocked. Let me find a solution.", msg_type="system")
 
     async def handle_task_completion(self, task_id: str, channel: str = "general", worker_name: str = "The team"):
         task = self.tasks.get(task_id)
@@ -597,22 +589,16 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
         if task:
             task.status = TaskStatus.review
         try:
-            review = await self.think(
-                f"{worker_name} just finished '{title}'. As their coworker, reply in the group in one or two natural English sentences: acknowledge the work and name the next step. No action blocks."
-            )
+            review = await self.think(f"{worker_name} just finished '{title}'. As their coworker, reply in the group in one or two natural English sentences: acknowledge the work and name the next step. No action blocks.")
             clean = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', review, flags=re.DOTALL).strip()
         except Exception:
-            clean = f"✅ Nice work on '{title}', {worker_name}. Let's move to review."
-        await self.send_message(self.project.id, clean or f"✅ '{title}' completed.", channel=channel)
+            clean = f"Nice work on '{title}', {worker_name}. Let's move to review."
+        await self.send_message(self.project.id, clean or f"'{title}' completed.", channel=channel)
 
     async def subscribe_events(self):
         async def on_message(data: dict):
             if data.get("project_id") != self.agent.project_id:
                 return
-            # ponytail: only the coworker subscribes to group messages; workers are
-            # driven by task assignment, which keeps agent chatter bounded (no
-            # worker<->worker reply loops). Upgrade path: give workers their own
-            # mention-scoped subscription with de-dup if free agent-to-agent chat is needed.
             if data.get("sender_id") == self.id:
                 return
             msg_type = data.get("msg_type", "chat")
@@ -622,7 +608,6 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
                     channel=data.get("channel", "general"),
                     worker_name=data.get("sender_name", "The team"),
                 )
-
         event_bus.subscribe("message", on_message)
         self._event_handlers.append(("message", on_message))
 
