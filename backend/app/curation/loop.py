@@ -4,6 +4,7 @@ import logging
 from typing import Optional
 
 from app.curation.evaluator import evaluate_exchange
+from app.curation.triggers import on_message, should_curate
 from app.memory.manager import memory_manager
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ async def run_curation_loop(
     agent_resp: str,
     project_id: str,
     agent_id: str,
+    user_id: str = "default",
     llm_provider=None,
 ):
     global _curation_counter
@@ -31,8 +33,28 @@ async def run_curation_loop(
             user_msg, agent_resp, llm_provider, eval_result["suggested_category"],
         ))
 
+    if should_curate(user_msg):
+        asyncio.create_task(_llm_curation(
+            user_id, project_id, agent_id, user_msg, agent_resp, llm_provider,
+        ))
+
     if _curation_counter % _CONSOLIDATE_INTERVAL == 0:
         asyncio.create_task(_consolidate_and_prune(project_id))
+
+    on_message()
+
+
+async def _llm_curation(
+    user_id: str, project_id: str, agent_id: str,
+    user_msg: str, agent_resp: str, llm_provider=None,
+):
+    from app.curator.curator import run_llm_curation
+    try:
+        await run_llm_curation(
+            user_id, project_id, agent_id, user_msg, agent_resp, llm_provider,
+        )
+    except Exception as e:
+        logger.warning("LLM curation failed: %s", e)
 
 
 async def _maybe_create_skill(

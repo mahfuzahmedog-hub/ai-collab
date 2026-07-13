@@ -117,6 +117,18 @@ class BaseAgent:
         return tcs
 
     async def execute_tool(self, tool_name: str, params: dict) -> str:
+        if tool_name == "delegate_to_agent":
+            from app.agents.delegator import find_agent_for_task, delegate_to_agent
+            team = getattr(self, "team", {})
+            if not team:
+                return json.dumps({"error": "No team available for delegation"})
+            target_id = params.get("agent_id") or params.get("name")
+            if not target_id:
+                target_id = await find_agent_for_task(team, params.get("task", ""), params.get("skills_needed"))
+            if not target_id:
+                return json.dumps({"error": "No suitable agent found for delegation"})
+            result = await delegate_to_agent(team, target_id, params.get("task", ""), params.get("context"))
+            return json.dumps({"result": result})
         fn = _TOOL_HANDLERS.get(tool_name)
         if fn:
             try:
@@ -149,38 +161,42 @@ class BaseAgent:
         return tool_registry.to_openai_schemas()
 
     def _build_messages(self, prompt: str) -> list[dict]:
-        memory_block = ""
-        if self.agent.memory.get("facts"):
-            memory_block = "\nMemory:\n" + "\n".join(
-                f"- {k}: {v}" for k, v in self.agent.memory["facts"].items()
-            )
+        from app.agents.prompt_builder import build_system_prompt
+        system = build_system_prompt(
+            name=self.name,
+            role=str(self.agent.role),
+            personality=self.agent.personality,
+            skills=self.agent.skills,
+            project_id=self.agent.project_id,
+            mission=self.agent.mission,
+        )
+        from app.agents.context_compressor import compress_history
+        history = compress_history(self.agent.chat_history)
         return [
-            {"role": "system", "content": self._system_prompt() + memory_block},
-            *self.agent.chat_history[-100:],
+            {"role": "system", "content": system},
+            *history,
             {"role": "user", "content": prompt},
         ]
 
     async def _enrich_with_skills(self, prompt: str) -> str:
         from app.skills.loader import load_skills_for_prompt
         try:
-            return " " + await load_skills_for_prompt(prompt)
+            skills_text = await load_skills_for_prompt(prompt)
+            if skills_text:
+                return "\n" + skills_text
         except Exception:
             pass
         return ""
 
     async def _enrich_with_memories(self, prompt: str) -> str:
         from app.memory.manager import memory_manager
+        from app.agents.prompt_builder import build_memories_block
         try:
             memories = await memory_manager.search(prompt, project_id=self.agent.project_id, agent_id=self.id, limit=5)
             if not memories:
                 memories = await memory_manager.recall(self.agent.project_id, agent_id=self.id, limit=20)
             if memories:
-                lines = []
-                for m in memories:
-                    type_tag = m.get("type", "fact")
-                    content = m.get("content", "")[:200]
-                    lines.append(f"[{type_tag}] {content}")
-                return "\nRecall:\n" + "\n".join(lines)
+                return "\n" + build_memories_block(memories)
         except Exception:
             pass
         return ""
@@ -348,6 +364,7 @@ class BaseAgent:
                 agent_resp=response,
                 project_id=self.agent.project_id,
                 agent_id=self.id,
+                user_id="default",
             )
         except Exception as e:
             logger.warning("curation loop failed: %s", e)
@@ -396,12 +413,12 @@ class BaseAgent:
         await self.set_status(AgentStatus.idle)
 
     def _system_prompt(self) -> str:
-        return (
-            f"You are {self.name}, a {self.agent.role} in an AI collaboration team.\n"
-            f"Personality: {self.agent.personality}\n"
-            f"Skills: {', '.join(self.agent.skills)}\n"
-            f"You are working on project {self.agent.project_id}.\n"
-            "You communicate naturally with your teammates like a human coworker.\n"
-            "Be concise, professional, and collaborative.\n"
-            "You can ask questions, suggest ideas, report progress, request reviews, and help others.\n"
+        from app.agents.prompt_builder import build_system_prompt
+        return build_system_prompt(
+            name=self.name,
+            role=str(self.agent.role),
+            personality=self.agent.personality,
+            skills=self.agent.skills,
+            project_id=self.agent.project_id,
+            mission=self.agent.mission,
         )

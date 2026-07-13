@@ -30,6 +30,8 @@ class AgentStatus(str, enum.Enum):
     paused = "paused"
     retrying = "retrying"
     failed = "failed"
+    awaiting_tool = "awaiting_tool"
+    delegated = "delegated"
     error = "error"
     retired = "retired"
 
@@ -37,12 +39,9 @@ class AgentStatus(str, enum.Enum):
 PRESENCE_MAP = {
     AgentStatus.idle: "😴",
     AgentStatus.thinking: "🧠",
+    AgentStatus.awaiting_tool: "🔧",
+    AgentStatus.delegated: "📤",
     AgentStatus.working: "💻",
-    AgentStatus.researching: "🔍",
-    AgentStatus.collaborating: "🤝",
-    AgentStatus.reviewing: "📝",
-    AgentStatus.waiting_for_dependencies: "⏸️",
-    AgentStatus.blocked: "🚫",
     AgentStatus.error: "❌",
 }
 

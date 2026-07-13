@@ -163,6 +163,16 @@ create_task = ToolDefinition(
     }, ["title"]),
 )
 
+delegate_to_agent_tool = ToolDefinition(
+    name="delegate_to_agent",
+    description="Delegate a task to a specific agent by name or find the best match by skill.",
+    parameters=_O({
+        "name": _S("Agent name to delegate to (omit for auto-match)"),
+        "task": _S("Task description"),
+        "skills_needed": _A(_S("Skills the target agent should have")),
+    }, ["task"]),
+)
+
 write_file = ToolDefinition(
     name="write_file",
     description="Write content to a file in the workspace.",
@@ -355,7 +365,7 @@ ALL_TOOLS = [
     create_thread,
     register_tool, remove_tool, create_knowledge_base, remember_fact, forget_memory, search_memories_tool,
     create_skill, search_skills_tool, list_skills_tool, delete_skill_tool,
-    create_task,
+    create_task, delegate_to_agent_tool,
     write_file, read_file, list_files,
     http_get, http_post, http_put, http_delete,
     web_search, browse, screenshot,

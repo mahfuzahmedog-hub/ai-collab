@@ -10,32 +10,20 @@ logger = logging.getLogger(__name__)
 VALID_TRANSITIONS = {
     AgentStatus.creating: {AgentStatus.initializing, AgentStatus.error},
     AgentStatus.initializing: {AgentStatus.idle, AgentStatus.error},
-    AgentStatus.idle: {AgentStatus.assigned, AgentStatus.planning, AgentStatus.researching, AgentStatus.thinking, AgentStatus.working, AgentStatus.collaborating, AgentStatus.reviewing, AgentStatus.paused, AgentStatus.retired},
-    AgentStatus.assigned: {AgentStatus.planning, AgentStatus.working, AgentStatus.waiting_for_dependencies, AgentStatus.blocked, AgentStatus.idle, AgentStatus.error},
-    AgentStatus.planning: {AgentStatus.working, AgentStatus.waiting_for_dependencies, AgentStatus.reviewing, AgentStatus.blocked, AgentStatus.idle, AgentStatus.error},
-    AgentStatus.waiting_for_dependencies: {AgentStatus.working, AgentStatus.planning, AgentStatus.blocked, AgentStatus.idle, AgentStatus.error},
-    AgentStatus.researching: {AgentStatus.working, AgentStatus.thinking, AgentStatus.reviewing, AgentStatus.idle, AgentStatus.error},
-    AgentStatus.thinking: {AgentStatus.working, AgentStatus.researching, AgentStatus.idle, AgentStatus.error, AgentStatus.blocked},
-    AgentStatus.working: {AgentStatus.reviewing, AgentStatus.testing, AgentStatus.blocked, AgentStatus.idle, AgentStatus.error, AgentStatus.collaborating, AgentStatus.awaiting_user_approval, AgentStatus.completed, AgentStatus.failed},
-    AgentStatus.collaborating: {AgentStatus.working, AgentStatus.reviewing, AgentStatus.idle, AgentStatus.error},
-    AgentStatus.reviewing: {AgentStatus.approved, AgentStatus.working, AgentStatus.idle, AgentStatus.blocked, AgentStatus.error, AgentStatus.failed},
-    AgentStatus.awaiting_user_approval: {AgentStatus.approved, AgentStatus.working, AgentStatus.idle, AgentStatus.blocked, AgentStatus.error},
-    AgentStatus.approved: {AgentStatus.executing, AgentStatus.idle, AgentStatus.error},
-    AgentStatus.executing: {AgentStatus.testing, AgentStatus.completed, AgentStatus.blocked, AgentStatus.idle, AgentStatus.error, AgentStatus.failed},
-    AgentStatus.testing: {AgentStatus.completed, AgentStatus.working, AgentStatus.idle, AgentStatus.blocked, AgentStatus.error, AgentStatus.failed},
-    AgentStatus.completed: {AgentStatus.idle, AgentStatus.archived, AgentStatus.reviewing, AgentStatus.error},
-    AgentStatus.archived: set(),
-    AgentStatus.blocked: {AgentStatus.idle, AgentStatus.waiting_for_dependencies, AgentStatus.retrying, AgentStatus.planning, AgentStatus.working, AgentStatus.error},
-    AgentStatus.paused: {AgentStatus.idle, AgentStatus.working, AgentStatus.error},
-    AgentStatus.retrying: {AgentStatus.working, AgentStatus.planning, AgentStatus.researching, AgentStatus.idle, AgentStatus.error, AgentStatus.failed},
-    AgentStatus.failed: {AgentStatus.retrying, AgentStatus.idle, AgentStatus.error, AgentStatus.retired},
-    AgentStatus.error: {AgentStatus.retrying, AgentStatus.idle, AgentStatus.retired},
+    AgentStatus.idle: {AgentStatus.thinking, AgentStatus.delegated, AgentStatus.paused, AgentStatus.retired},
+    AgentStatus.thinking: {AgentStatus.awaiting_tool, AgentStatus.idle, AgentStatus.delegated, AgentStatus.error},
+    AgentStatus.awaiting_tool: {AgentStatus.thinking, AgentStatus.idle, AgentStatus.error},
+    AgentStatus.delegated: {AgentStatus.thinking, AgentStatus.idle, AgentStatus.error},
+    AgentStatus.paused: {AgentStatus.idle, AgentStatus.error},
+    AgentStatus.error: {AgentStatus.idle, AgentStatus.retired},
     AgentStatus.retired: set(),
+}
+_NOTIFY_TRANSITIONS = {
+    AgentStatus.error, AgentStatus.retired,
 }
 
 NOTIFY_TRANSITIONS = {
-    AgentStatus.blocked, AgentStatus.error, AgentStatus.awaiting_user_approval,
-    AgentStatus.completed, AgentStatus.failed, AgentStatus.retired,
+    AgentStatus.error, AgentStatus.retired,
 }
 
 
