@@ -75,6 +75,37 @@ class MemoryManager:
                 mem_id UNINDEXED, content, tags,
                 tokenize='porter unicode61'
             );
+            CREATE TABLE IF NOT EXISTS skills (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'knowledge',
+                prompt_template TEXT NOT NULL,
+                trigger_phrases TEXT NOT NULL DEFAULT '[]',
+                parameters TEXT NOT NULL DEFAULT '{}',
+                usage_count INTEGER NOT NULL DEFAULT 0,
+                success_rate REAL NOT NULL DEFAULT 1.0,
+                version INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                last_used TEXT NOT NULL,
+                changelog TEXT NOT NULL DEFAULT '[]',
+                metadata TEXT NOT NULL DEFAULT '{}'
+            );
+            CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category);
+            CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name);
+            CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(
+                skill_id UNINDEXED, name, description, prompt_template, trigger_phrases,
+                tokenize='porter unicode61'
+            );
+            CREATE TABLE IF NOT EXISTS skill_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                skill_id TEXT NOT NULL,
+                success INTEGER NOT NULL DEFAULT 1,
+                context TEXT,
+                duration_ms INTEGER,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_skill_usage_id ON skill_usage(skill_id);
         """)
         await self._conn.commit()
 
@@ -234,6 +265,122 @@ class MemoryManager:
             except Exception as e:
                 logger.warning("Embedding via OmniRoute failed: %s", e)
         return []
+
+    async def save_skill(self, skill: dict) -> str:
+        await self._ensure_db()
+        skill_id = skill.get("id", f"skl-{uuid.uuid4().hex[:12]}")
+        now = _utcnow()
+        row = {
+            "id": skill_id,
+            "name": skill["name"],
+            "description": skill.get("description", ""),
+            "category": skill.get("category", "knowledge"),
+            "prompt_template": skill.get("prompt_template", ""),
+            "trigger_phrases": json.dumps(skill.get("trigger_phrases", [])),
+            "parameters": json.dumps(skill.get("parameters", {})),
+            "usage_count": skill.get("usage_count", 0),
+            "success_rate": skill.get("success_rate", 1.0),
+            "version": skill.get("version", 1),
+            "created_at": skill.get("created_at", now),
+            "last_used": now,
+            "changelog": json.dumps(skill.get("changelog", [])),
+            "metadata": json.dumps(skill.get("metadata", {})),
+        }
+        cols = ", ".join(row.keys())
+        ph = ", ".join("?" for _ in row)
+        await self._conn.execute(f"INSERT OR REPLACE INTO skills ({cols}) VALUES ({ph})", list(row.values()))
+        await self._conn.execute(
+            "INSERT OR REPLACE INTO skills_fts (skill_id, name, description, prompt_template, trigger_phrases) VALUES (?, ?, ?, ?, ?)",
+            (skill_id, row["name"], row["description"], row["prompt_template"], row["trigger_phrases"]),
+        )
+        await self._conn.commit()
+        return skill_id
+
+    async def get_skill(self, skill_id: str) -> Optional[dict]:
+        await self._ensure_db()
+        cursor = await self._conn.execute("SELECT * FROM skills WHERE id = ?", (skill_id,))
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        d = dict(row)
+        for field in ("trigger_phrases", "parameters", "changelog", "metadata"):
+            if isinstance(d.get(field), str):
+                d[field] = json.loads(d[field])
+        return d
+
+    async def get_skill_by_name(self, name: str) -> Optional[dict]:
+        await self._ensure_db()
+        cursor = await self._conn.execute("SELECT * FROM skills WHERE name = ?", (name,))
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        d = dict(row)
+        for field in ("trigger_phrases", "parameters", "changelog", "metadata"):
+            if isinstance(d.get(field), str):
+                d[field] = json.loads(d[field])
+        return d
+
+    async def search_skills(self, query: str, category: Optional[str] = None, limit: int = 10) -> list[dict]:
+        await self._ensure_db()
+        safe = query.replace('"', '""')
+        fts_query = f'"{safe}" OR {" ".join(safe.split())}'
+        sql = "SELECT s.* FROM skills s INNER JOIN skills_fts f ON s.id = f.skill_id WHERE skills_fts MATCH ?"
+        params: list[Any] = [fts_query]
+        if category:
+            sql += " AND s.category = ?"
+            params.append(category)
+        sql += " ORDER BY s.usage_count DESC, s.success_rate DESC LIMIT ?"
+        params.append(limit)
+        cursor = await self._conn.execute(sql, params)
+        rows = await cursor.fetchall()
+        results = []
+        for r in rows:
+            d = dict(r)
+            for field in ("trigger_phrases", "parameters", "changelog", "metadata"):
+                if isinstance(d.get(field), str):
+                    d[field] = json.loads(d[field])
+            results.append(d)
+        return results
+
+    async def list_skills(self, category: Optional[str] = None, limit: int = 50) -> list[dict]:
+        await self._ensure_db()
+        sql = "SELECT * FROM skills"
+        params: list[Any] = []
+        if category:
+            sql += " WHERE category = ?"
+            params.append(category)
+        sql += " ORDER BY usage_count DESC, last_used DESC LIMIT ?"
+        params.append(limit)
+        cursor = await self._conn.execute(sql, params)
+        rows = await cursor.fetchall()
+        results = []
+        for r in rows:
+            d = dict(r)
+            for field in ("trigger_phrases", "parameters", "changelog", "metadata"):
+                if isinstance(d.get(field), str):
+                    d[field] = json.loads(d[field])
+            results.append(d)
+        return results
+
+    async def delete_skill(self, skill_id: str) -> bool:
+        await self._ensure_db()
+        cursor = await self._conn.execute("DELETE FROM skills WHERE id = ?", (skill_id,))
+        await self._conn.execute("DELETE FROM skills_fts WHERE skill_id = ?", (skill_id,))
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
+    async def log_skill_usage(self, skill_id: str, success: bool = True, context: Optional[str] = None, duration_ms: Optional[int] = None):
+        await self._ensure_db()
+        now = _utcnow()
+        await self._conn.execute(
+            "INSERT INTO skill_usage (skill_id, success, context, duration_ms, created_at) VALUES (?, ?, ?, ?, ?)",
+            (skill_id, 1 if success else 0, context, duration_ms, now),
+        )
+        await self._conn.execute(
+            "UPDATE skills SET usage_count = usage_count + 1, last_used = ? WHERE id = ?",
+            (now, skill_id),
+        )
+        await self._conn.commit()
 
     async def close(self):
         if self._conn:

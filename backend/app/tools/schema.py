@@ -312,11 +312,49 @@ search_memories_tool = ToolDefinition(
     }, ["query"]),
 )
 
+create_skill = ToolDefinition(
+    name="create_skill",
+    description="Create a reusable skill from a completed workflow or task. The LLM will extract the pattern automatically.",
+    parameters=_O({
+        "name": _S("Short kebab-case name for the skill"),
+        "description": _S("One-line summary of what the skill does"),
+        "category": _S("Category: workflow, knowledge, template, or integration"),
+        "prompt_template": _S("Instructions injected when this skill is triggered"),
+        "trigger_phrases": _A(_S("Phrase that auto-activates this skill")),
+    }, ["name", "description"]),
+)
+
+search_skills_tool = ToolDefinition(
+    name="search_skills",
+    description="Search available skills by keyword.",
+    parameters=_O({
+        "query": _S("Search query"),
+        "category": _S("Optional category filter: workflow, knowledge, template, integration"),
+    }, ["query"]),
+)
+
+list_skills_tool = ToolDefinition(
+    name="list_skills",
+    description="List all registered skills, optionally filtered by category.",
+    parameters=_O({
+        "category": _S("Optional category filter: workflow, knowledge, template, integration"),
+    }),
+)
+
+delete_skill_tool = ToolDefinition(
+    name="delete_skill",
+    description="Delete a skill by its ID.",
+    parameters=_O({
+        "skill_id": _S("Skill ID to delete"),
+    }, ["skill_id"]),
+)
+
 ALL_TOOLS = [
     create_agent, evolve_agent, merge_agents, split_agent, retire_agent,
     create_channel, create_subchannel, rename_channel, move_channel, delete_channel,
     create_thread,
     register_tool, remove_tool, create_knowledge_base, remember_fact, forget_memory, search_memories_tool,
+    create_skill, search_skills_tool, list_skills_tool, delete_skill_tool,
     create_task,
     write_file, read_file, list_files,
     http_get, http_post, http_put, http_delete,

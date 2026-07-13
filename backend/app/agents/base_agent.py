@@ -160,6 +160,14 @@ class BaseAgent:
             {"role": "user", "content": prompt},
         ]
 
+    async def _enrich_with_skills(self, prompt: str) -> str:
+        from app.skills.loader import load_skills_for_prompt
+        try:
+            return " " + await load_skills_for_prompt(prompt)
+        except Exception:
+            pass
+        return ""
+
     async def _enrich_with_memories(self, prompt: str) -> str:
         from app.memory.manager import memory_manager
         try:
@@ -183,6 +191,9 @@ class BaseAgent:
         recall = await self._enrich_with_memories(prompt)
         if recall:
             messages[0]["content"] += recall
+        skills_block = await self._enrich_with_skills(prompt)
+        if skills_block:
+            messages[0]["content"] += skills_block
         _t0 = time.perf_counter()
         _status = "completed"
         try:
@@ -209,6 +220,9 @@ class BaseAgent:
         recall = await self._enrich_with_memories(prompt)
         if recall:
             messages[0]["content"] += recall
+        skills_block = await self._enrich_with_skills(prompt)
+        if skills_block:
+            messages[0]["content"] += skills_block
         full_response = ""
         try:
             async for chunk in llm_router.chat_stream(
@@ -251,6 +265,9 @@ class BaseAgent:
         recall = await self._enrich_with_memories(prompt)
         if recall:
             messages[0]["content"] += recall
+        skills_block = await self._enrich_with_skills(prompt)
+        if skills_block:
+            messages[0]["content"] += skills_block
         max_iterations = 10
         full_response = ""
         first_content = True

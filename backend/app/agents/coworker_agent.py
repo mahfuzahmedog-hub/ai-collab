@@ -455,6 +455,41 @@ class CoworkerAgent(BaseAgent):
                     return "\n".join(f"[{m['type']}] {m['content'][:200]}" for m in results)
                 return "No memories found."
             return "No query provided."
+        elif t == "create_skill":
+            from app.memory.manager import memory_manager
+            skill = {
+                "name": action.get("name", ""),
+                "description": action.get("description", ""),
+                "category": action.get("category", "knowledge"),
+                "prompt_template": action.get("prompt_template", ""),
+                "trigger_phrases": action.get("trigger_phrases", []),
+            }
+            if not skill["name"]:
+                return "No skill name provided."
+            skill_id = await memory_manager.save_skill(skill)
+            return f"Skill '{skill['name']}' created (id: {skill_id})."
+        elif t == "search_skills":
+            from app.memory.manager import memory_manager
+            query = action.get("query", "")
+            category = action.get("category")
+            results = await memory_manager.search_skills(query, category=category, limit=5)
+            if results:
+                return "\n".join(f"**{s['name']}** ({s['category']}): {s['description'][:100]}" for s in results)
+            return "No skills found."
+        elif t == "list_skills":
+            from app.memory.manager import memory_manager
+            category = action.get("category")
+            results = await memory_manager.list_skills(category=category, limit=50)
+            if results:
+                return "\n".join(f"**{s['name']}** ({s['category']}, id: {s['id']}): {s['description'][:80]}" for s in results)
+            return "No skills registered."
+        elif t == "delete_skill":
+            from app.memory.manager import memory_manager
+            skill_id = action.get("skill_id", "")
+            if not skill_id:
+                return "No skill_id provided."
+            ok = await memory_manager.delete_skill(skill_id)
+            return f"Skill {skill_id} deleted." if ok else f"Skill {skill_id} not found."
         elif t == "create_task":
             assign_to = action.get("assign_to", "")
             assigned_role = None
