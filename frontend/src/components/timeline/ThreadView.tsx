@@ -26,7 +26,7 @@ export function ThreadView() {
 
   const handleSend = () => {
     if (!input.trim() || !thread) return;
-    sendChat(input, thread.channel);
+    sendChat(input, thread.channel, thread.id);
     setInput("");
   };
 

@@ -104,8 +104,8 @@ export function send(data: Record<string, any>) {
   }
 }
 
-export function sendChat(content: string, channel = "general") {
-  send({ type: "chat", content, sender_name: "User", channel });
+export function sendChat(content: string, channel = "general", thread_id?: string) {
+  send({ type: "chat", content, sender_name: "User", channel, thread_id });
 }
 
 export function sendCommand(command: string, args: Record<string, any> = {}) {
@@ -137,12 +137,24 @@ export function sendResumeAgent(agentId: string) {
   sendCommand("resume_agent", { agent_id: agentId });
 }
 
+export function sendUpdateAgent(agentId: string, data: Record<string, any>) {
+  sendCommand("update_agent", { agent_id: agentId, ...data });
+}
+
+export function sendRemoveAgent(agentId: string) {
+  sendCommand("remove_agent", { agent_id: agentId });
+}
+
 export function sendMarkNotificationRead(notificationId: string) {
   sendCommand("mark_notification_read", { notification_id: notificationId });
 }
 
 export function sendReadFile(path: string) {
   sendCommand("read_file", { path });
+}
+
+export function sendWriteFile(path: string, content: string) {
+  sendCommand("write_file", { path, content });
 }
 
 export function sendEditMessage(messageId: string, content: string) {
@@ -327,7 +339,7 @@ function handleMessage(data: any) {
       break;
 
     case "file_changed":
-      // Could refresh file tree here
+      sendCommand("load_project", { project_id: getProjectId() });
       break;
 
     case "tool_call_start":

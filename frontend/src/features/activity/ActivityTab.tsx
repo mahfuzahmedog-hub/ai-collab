@@ -1,7 +1,21 @@
 "use client";
 
 import { useStore } from "@/store";
-import { TrendingUp, DollarSign, Activity, Clock } from "lucide-react";
+import { TrendingUp, DollarSign, Activity, Clock, Download } from "lucide-react";
+
+function exportCSV(data: Record<string, any>[], filename: string) {
+  if (!data.length) return;
+  const headers = Object.keys(data[0]);
+  const rows = data.map((r) => headers.map((h) => JSON.stringify(String(r[h] ?? ""))).join(","));
+  const csv = [headers.join(","), ...rows].join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 // M6: dashboard parity inside the persistent workspace shell (Activity tab).
 export function ActivityTab() {
@@ -44,9 +58,14 @@ export function ActivityTab() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-dark-900 rounded-lg p-4 border border-dark-700">
-          <h2 className="font-semibold mb-3 flex items-center gap-2 text-white">
-            <Activity size={16} /> Lifecycle Events
-          </h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold flex items-center gap-2 text-white">
+              <Activity size={16} /> Lifecycle Events
+            </h2>
+            <button onClick={() => exportCSV(audits, "lifecycle_events.csv")} className="text-xs text-dark-400 hover:text-white flex items-center gap-1 transition-colors">
+              <Download size={12} /> CSV
+            </button>
+          </div>
           <div className="space-y-2 max-h-96 overflow-y-auto">
             {audits.slice(0, 50).map((a) => (
               <div key={a.id} className="text-xs bg-dark-800 p-2 rounded flex items-center justify-between">
@@ -59,9 +78,14 @@ export function ActivityTab() {
         </div>
 
         <div className="bg-dark-900 rounded-lg p-4 border border-dark-700">
-          <h2 className="font-semibold mb-3 flex items-center gap-2 text-white">
-            <Activity size={16} /> Execution Logs
-          </h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold flex items-center gap-2 text-white">
+              <Activity size={16} /> Execution Logs
+            </h2>
+            <button onClick={() => exportCSV(logs, "execution_logs.csv")} className="text-xs text-dark-400 hover:text-white flex items-center gap-1 transition-colors">
+              <Download size={12} /> CSV
+            </button>
+          </div>
           <div className="space-y-2 max-h-96 overflow-y-auto">
             {logs.slice(0, 50).map((l) => (
               <div key={l.id} className="text-xs bg-dark-800 p-2 rounded">

@@ -32,11 +32,10 @@ async def get_project(project_id: str):
 
 @router.post("/{project_id}/agents")
 async def add_agent(project_id: str, agent_data: dict):
-    from app.models.agent import AgentRole
     project = _projects_store.get(project_id)
     if not project:
         raise HTTPException(404, "Project not found")
-    role = AgentRole(agent_data.get("role", "backend_engineer"))
+    role = agent_data.get("role", "backend_engineer")
     worker = await agent_manager.create_worker(
         project_id,
         agent_data.get("name", "Worker"),

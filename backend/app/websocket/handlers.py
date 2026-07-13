@@ -35,6 +35,13 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                     content = data.get("content", "")
                     sender = data.get("sender_name", "User")
                     channel = data.get("channel", "general")
+                    # Parse @mentions from content + client-provided mentions
+                    import re as _re
+                    from app.db.repository import load_project_agents
+                    content_mentions = set(_re.findall(r'@(\w[\w-]*)', content))
+                    agent_names = {a.name for a in await load_project_agents(project_id)}
+                    all_mentions = content_mentions & agent_names
+                    all_mentions |= set(data.get("mentions") or [])
                     msg = {
                         "type": "message",
                         "id": f"msg-{uuid4().hex[:8]}",
@@ -47,7 +54,7 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                         "channel": channel,
                         "thread_id": data.get("thread_id", None),
                         "reply_to": None,
-                        "mentions": [],
+                        "mentions": list(all_mentions),
                         "attachments": [],
                         "metadata": {},
                         "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -56,10 +63,10 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                     asyncio.create_task(save_message(Message(**msg)))
 
                     # Create notification for @mentions
-                    if data.get("mentions"):
+                    if all_mentions:
                         from app.db.repository import save_notification
                         from app.models.ops import Notification
-                        for mention in data["mentions"]:
+                        for mention in all_mentions:
                             n = Notification(
                                 project_id=project_id, type="mention",
                                 title=f"@{sender} mentioned you",
@@ -501,11 +508,46 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             except Exception as e:
                 logger.warning("%s failed: %s", command, e)
 
+    elif command == "update_agent":
+        agent_id = args.get("agent_id", "")
+        name = args.get("name")
+        from app.db.repository import load_agent as _load_agent_db, save_agent as _save_agent_db
+        from app.models.agent import Agent as _AgentModel
+        if agent_manager.boss and agent_manager.boss.id == agent_id:
+            target_agent = agent_manager.boss.agent
+        elif agent_manager.boss and agent_id in agent_manager.boss.team:
+            target_agent = agent_manager.boss.team[agent_id].agent
+        else:
+            target_agent = None
+        if target_agent and name:
+            target_agent.name = name
+            asyncio.create_task(_save_agent_db(target_agent))
+            await event_bus.publish("agent_updated", target_agent.model_dump())
+
+    elif command == "remove_agent":
+        agent_id = args.get("agent_id", "")
+        if agent_manager.boss and agent_id in agent_manager.boss.team:
+            agent_manager.boss.team.pop(agent_id, None)
+            await event_bus.publish("agent_removed", {"agent_id": agent_id, "project_id": project_id})
+        elif agent_manager.boss and agent_manager.boss.id == agent_id:
+            await ws.send_text(json.dumps({"type": "error", "message": "Cannot remove the Coworker agent."}))
+
     elif command == "mark_notification_read":
         from app.db.repository import mark_notification_read
         nid = args.get("notification_id", "")
         if nid and await mark_notification_read(project_id, nid):
             await ws_manager.broadcast(project_id, {"type": "notification_read", "notification_id": nid})
+
+    elif command == "write_file":
+        path = args.get("path", "")
+        content = args.get("content", "")
+        if path and content is not None:
+            from app.workspace.manager import write_file as ws_write_file
+            try:
+                result = await ws_write_file(project_id, path, content)
+                await ws.send_text(json.dumps({"type": "file_content", "path": path, "content": content}))
+            except Exception as e:
+                await ws.send_text(json.dumps({"type": "error", "message": f"write_file failed: {e}"}))
 
     elif command == "read_file":
         path = args.get("path", "")

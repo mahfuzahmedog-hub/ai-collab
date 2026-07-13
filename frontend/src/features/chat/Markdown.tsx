@@ -6,6 +6,7 @@ import clsx from "clsx";
 
 export function Markdown({ children }: { children: React.ReactNode }) {
   const content = typeof children === "string" ? children : "";
+  const highlighted = content.replace(/@(\w[\w-]*\w|\w)/g, '`@$1`');
   return (
     <div className="text-sm text-dark-100 leading-relaxed">
       <ReactMarkdown
