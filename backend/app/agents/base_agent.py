@@ -104,6 +104,12 @@ class BaseAgent:
                     ):
                         content += chunk
                     tool_calls = getattr(provider, "_last_tool_calls", [])
+                    # ponytail: small/free models (e.g. groq/llama-3.1-8b-instant)
+                    # can return an empty body when handed a large tool schema.
+                    # Fall back to a plain no-tool call so the agent still replies
+                    # instead of going silent. (Upgrade: cap tool schema width.)
+                    if not content and not tool_calls and tools:
+                        content = (await provider.chat(messages, temperature=temperature)) or ""
                     state["_new_content"] = content
                 else:
                     response = await provider.chat(messages, temperature=temperature)
@@ -122,7 +128,15 @@ class BaseAgent:
                 state["_tool_calls"] = []
                 state["_has_tool_calls"] = False
                 if not state.get("response"):
-                    state["_new_content"] = "I encountered an error processing your request."
+                    # ponytail: single no-tool retry so a tool-flow failure
+                    # still yields a usable reply instead of an error string.
+                    # Strip tool/assistant-tool_call messages so the plain call
+                    # isn't rejected by providers that forbid orphan tool roles.
+                    retry_messages = [m for m in messages if m.get("role") in ("system", "user")]
+                    try:
+                        state["_new_content"] = (await provider.chat(retry_messages, temperature=temperature)) or ""
+                    except Exception:
+                        state["_new_content"] = "I encountered an error processing your request."
 
             return Command()
 

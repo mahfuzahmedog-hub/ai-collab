@@ -32,10 +32,11 @@ class ConnectionManager:
             return
         data = json.dumps(message, default=str)
         dead = set()
-        for ws in self._connections[project_id]:
+        for ws in list(self._connections[project_id]):
             try:
                 await ws.send_text(data)
-            except Exception:
+            except Exception as e:
+                logger.warning("WebSocket send failed pid=%s err=%r", project_id, e)
                 dead.add(ws)
         for ws in dead:
             self._connections[project_id].discard(ws)

@@ -20,3 +20,9 @@ dist/
 # ponytail agent config
 .ponytail/
 .vercel
+
+# backend runtime sqlite dbs (regenerated at startup)
+backend/data/
+backend/**/*.db
+backend/loc_*.log
+backend/loc_*.log

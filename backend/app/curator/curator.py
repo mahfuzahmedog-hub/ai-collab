@@ -4,7 +4,7 @@ import logging
 from typing import Optional
 
 from app.curation.evaluator import evaluate_exchange
-from app.curation.profile import UserProfile, get_user_profile, save_user_profile
+from app.curator.profile import UserProfile, get_user_profile, save_user_profile
 from app.memory.manager import memory_manager
 
 logger = logging.getLogger(__name__)

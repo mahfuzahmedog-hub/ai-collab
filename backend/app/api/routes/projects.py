@@ -12,8 +12,8 @@ _projects_store: dict[str, Project] = {}
 async def create_project(project: Project):
     project.id = f"proj-{__import__('uuid').uuid4().hex[:8]}"
     _projects_store[project.id] = project
-    boss = await agent_manager.create_boss(project.id)
-    await boss.initialize_project(project)
+    boss = await agent_manager.create_coworker(project.id)
+    await boss.initialize_workspace(project)
     return {"project_id": project.id, "boss_name": boss.name}
 
 
