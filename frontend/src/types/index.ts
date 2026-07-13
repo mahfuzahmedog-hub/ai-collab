@@ -26,7 +26,8 @@ export type AgentStatus =
   | "waiting_for_dependencies" | "researching" | "thinking" | "working"
   | "collaborating" | "reviewing" | "awaiting_user_approval" | "approved"
   | "executing" | "testing" | "completed" | "archived" | "blocked" | "paused"
-  | "retrying" | "failed" | "error" | "retired";
+  | "retrying" | "failed" | "error" | "retired"
+  | "awaiting_tool" | "delegated";
 
 export interface Task {
   id: string;
@@ -179,6 +180,57 @@ export interface LifecycleAudit {
   to_state: string;
   reason: string;
   created_at: string;
+}
+
+export interface ToolCall {
+  id: string;
+  agent_id: string;
+  agent_name: string;
+  tool_name: string;
+  arguments: string;
+  result?: string;
+  status: "pending" | "running" | "completed" | "failed";
+  started_at: string;
+  completed_at?: string;
+}
+
+export interface Memory {
+  id: string;
+  type: "fact" | "conversation" | "decision" | "code" | "user_preference" | "user_profile";
+  content: string;
+  scope: "agent" | "project" | "user" | "global";
+  source: string;
+  tags: string[];
+  importance: number;
+  project_id?: string;
+  agent_id?: string;
+  created_at: string;
+  last_accessed: string;
+}
+
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  category: "workflow" | "knowledge" | "template" | "integration";
+  prompt_template: string;
+  trigger_phrases: string[];
+  usage_count: number;
+  success_rate: number;
+  version: number;
+  created_at: string;
+  last_used: string;
+}
+
+export interface UserProfile {
+  user_id: string;
+  project_id: string;
+  preferences: Record<string, any>;
+  communication_style: string;
+  domain_expertise: string[];
+  frequent_topics: string[];
+  interaction_count: number;
+  last_updated: string;
 }
 
 export interface WSMessage {

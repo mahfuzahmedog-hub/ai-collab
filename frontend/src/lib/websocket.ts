@@ -1,4 +1,4 @@
-import type { Agent, Task, Message, Project, Channel, FileNode, Thread, ExecutionLog, Notification, Approval, LifecycleAudit, AgentStatus } from "@/types";
+import type { Agent, Task, Message, Project, Channel, FileNode, Thread, ExecutionLog, Notification, Approval, LifecycleAudit, AgentStatus, ToolCall, Memory, Skill, UserProfile } from "@/types";
 import { useStore } from "@/store";
 
 let ws: WebSocket | null = null;
@@ -328,6 +328,38 @@ function handleMessage(data: any) {
 
     case "file_changed":
       // Could refresh file tree here
+      break;
+
+    case "tool_call_start":
+      store.addToolCall({
+        id: data.tool_call_id,
+        agent_id: data.agent_id,
+        agent_name: data.agent_name || "",
+        tool_name: data.tool_name,
+        arguments: data.arguments || "",
+        status: "running",
+        started_at: new Date().toISOString(),
+      } as ToolCall);
+      break;
+
+    case "tool_call_result":
+      store.updateToolCall(data.tool_call_id, {
+        result: (data.result || "").slice(0, 500),
+        status: data.error ? "failed" : "completed",
+        completed_at: new Date().toISOString(),
+      });
+      break;
+
+    case "memory_list":
+      if (data.memories) store.setMemories(data.memories as Memory[]);
+      break;
+
+    case "skill_list":
+      if (data.skills) store.setSkills(data.skills as Skill[]);
+      break;
+
+    case "user_profile":
+      if (data.profile) store.setUserProfile(data.profile as UserProfile);
       break;
 
     case "pong":

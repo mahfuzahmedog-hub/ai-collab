@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Agent, Task, Message, Project, AgentStatus, Channel, FileNode, Thread, ExecutionLog, Notification, Approval, LifecycleAudit } from "@/types";
+import type { Agent, Task, Message, Project, AgentStatus, Channel, FileNode, Thread, ExecutionLog, Notification, Approval, LifecycleAudit, ToolCall, Memory, Skill, UserProfile } from "@/types";
 
 interface AppState {
   // Project state
@@ -32,6 +32,14 @@ interface AppState {
   approvals: Approval[];
   lifecycleAudits: LifecycleAudit[];
 
+  // Tool calls
+  toolCalls: ToolCall[];
+
+  // Knowledge
+  memories: Memory[];
+  skills: Skill[];
+  userProfile: UserProfile | null;
+
   // Streaming
   streamingChunk: { agentId: string; content: string; done: boolean } | null;
 
@@ -40,6 +48,12 @@ interface AppState {
 
   // UI state
   activeTab: string;
+
+  addToolCall: (tc: ToolCall) => void;
+  updateToolCall: (id: string, data: Partial<ToolCall>) => void;
+  setMemories: (m: Memory[]) => void;
+  setSkills: (s: Skill[]) => void;
+  setUserProfile: (p: UserProfile | null) => void;
 
   // Workspace shell UI (M1)
   panelSizes: Record<string, number>;
@@ -136,6 +150,10 @@ export const useStore = create<AppState>((set) => ({
   notifications: [],
   approvals: [],
   lifecycleAudits: [],
+  toolCalls: [],
+  memories: [],
+  skills: [],
+  userProfile: null,
   streamingChunk: null,
   connected: false,
   activeTab: "workspace",
@@ -148,6 +166,13 @@ export const useStore = create<AppState>((set) => ({
   notificationsOpen: false,
   activeAgentProfile: null,
 
+  addToolCall: (tc) =>
+    set((s) => ({ toolCalls: s.toolCalls.some((x) => x.id === tc.id) ? s.toolCalls.map((x) => x.id === tc.id ? { ...x, ...tc } : x) : [...s.toolCalls, tc] })),
+  updateToolCall: (id, data) =>
+    set((s) => ({ toolCalls: s.toolCalls.map((tc) => (tc.id === id ? { ...tc, ...data } : tc)) })),
+  setMemories: (m) => set({ memories: m }),
+  setSkills: (s) => set({ skills: s }),
+  setUserProfile: (p) => set({ userProfile: p }),
   setProjects: (p) => set({ projects: p }),
   setActiveProjectId: (id) => set({ activeProjectId: id }),
   setProject: (p) => set({ project: p }),

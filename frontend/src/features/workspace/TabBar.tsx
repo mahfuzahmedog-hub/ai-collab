@@ -11,10 +11,10 @@ const TABS = [
   { id: "agents", label: "Agents" },
   { id: "files", label: "Files" },
   { id: "activity", label: "Activity" },
+  { id: "knowledge", label: "Knowledge" },
 ];
 
 const SOON = [
-  { id: "knowledge", label: "Knowledge" },
   { id: "tools", label: "Tools" },
   { id: "workflows", label: "Workflows" },
 ];
