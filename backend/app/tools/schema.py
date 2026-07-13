@@ -359,6 +359,50 @@ delete_skill_tool = ToolDefinition(
     }, ["skill_id"]),
 )
 
+browser_navigate = ToolDefinition(
+    name="browser_navigate",
+    description="Navigate the browser to a URL.",
+    parameters=_O({"url": _S("URL to navigate to")}, ["url"]),
+)
+browser_click = ToolDefinition(
+    name="browser_click",
+    description="Click an element on the page using a CSS selector.",
+    parameters=_O({"selector": _S("CSS selector to click")}, ["selector"]),
+)
+browser_type = ToolDefinition(
+    name="browser_type",
+    description="Type text into an input field.",
+    parameters=_O({"selector": _S("CSS selector"), "text": _S("Text to type")}, ["selector", "text"]),
+)
+browser_scroll = ToolDefinition(
+    name="browser_scroll",
+    description="Scroll the page vertically.",
+    parameters=_O({"delta_y": _N("Pixels to scroll (negative=up, positive=down)")}),
+)
+browser_extract = ToolDefinition(
+    name="browser_extract",
+    description="Extract text content from the page or specific elements.",
+    parameters=_O({"selector": _S("Optional CSS selector to extract specific elements")}),
+)
+browser_list_tabs = ToolDefinition(
+    name="browser_list_tabs",
+    description="List all open browser tabs.",
+    parameters=_O({}),
+)
+browser_switch_tab = ToolDefinition(
+    name="browser_switch_tab",
+    description="Switch to a different browser tab.",
+    parameters=_O({"page_id": _S("Tab ID to switch to")}, ["page_id"]),
+)
+coding_task_tool = ToolDefinition(
+    name="coding_task",
+    description="Plan and execute a coding task in a sandboxed environment.",
+    parameters=_O({
+        "task": _S("Description of the coding task to implement"),
+        "context": _S("Optional JSON context with additional information"),
+    }, ["task"]),
+)
+
 ALL_TOOLS = [
     create_agent, evolve_agent, merge_agents, split_agent, retire_agent,
     create_channel, create_subchannel, rename_channel, move_channel, delete_channel,
@@ -369,7 +413,9 @@ ALL_TOOLS = [
     write_file, read_file, list_files,
     http_get, http_post, http_put, http_delete,
     web_search, browse, screenshot,
-    run_python, run_shell,
+    browser_navigate, browser_click, browser_type, browser_scroll,
+    browser_extract, browser_list_tabs, browser_switch_tab,
+    run_python, run_shell, coding_task_tool,
     get_repo, search_repos, get_file_content, create_issue,
 ]
 

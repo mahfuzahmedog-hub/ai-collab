@@ -1,3 +1,4 @@
+import itertools
 import math
 import logging
 import httpx
@@ -9,6 +10,16 @@ _embedding_cache: dict[str, list[float]] = {}
 
 EMBEDDING_MODEL = "voyage-ai/voyage-3"
 EMBEDDING_DIM = 1024
+
+# ponytail: omniroute accepts one key per request, but settings may hold a
+# comma-joined multi-key string (used for rotation on rate limits). Pick a
+# single key per call, rotating like OmniRouteProvider._next_key().
+_omni_keys = [k.strip() for k in (settings.omniroute_api_key or "").split(",") if k.strip()]
+_omni_key_iter = itertools.cycle(_omni_keys) if _omni_keys else iter(())
+
+
+def _omni_key() -> str:
+    return next(_omni_key_iter, settings.omniroute_api_key or "")
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -28,7 +39,7 @@ async def _get_embedding_via_omniroute(text: str) -> list[float]:
         resp = await client.post(
             f"{settings.omniroute_base_url}/embeddings",
             headers={
-                "Authorization": f"Bearer {settings.omniroute_api_key}",
+                "Authorization": f"Bearer {_omni_key()}",
                 "Content-Type": "application/json",
             },
             json={"model": EMBEDDING_MODEL, "input": text},
@@ -55,7 +66,7 @@ async def get_embeddings(texts: list[str]) -> list[list[float]]:
             resp = await client.post(
                 f"{settings.omniroute_base_url}/embeddings",
                 headers={
-                    "Authorization": f"Bearer {settings.omniroute_api_key}",
+                    "Authorization": f"Bearer {_omni_key()}",
                     "Content-Type": "application/json",
                 },
                 json={"model": EMBEDDING_MODEL, "input": uncached},

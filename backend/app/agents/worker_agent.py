@@ -3,7 +3,7 @@ import asyncio
 import json
 import logging
 import re
-from typing import Optional
+from typing import Any, Optional
 from app.agents.base_agent import BaseAgent
 from app.models.agent import Agent, AgentStatus
 from app.models.task import Task, TaskStatus
@@ -11,6 +11,8 @@ from app.core.event_bus import event_bus
 from app.workspace.manager import write_file, read_file, list_files
 from app.db.repository import load_project_messages
 from app.tools.registry import tool_registry
+from app.graph.engine import GraphEngine, START, END
+from app.graph.types import Command
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +53,87 @@ class WorkerAgent(BaseAgent):
             return "\n".join(f"{f['path']} ({f['size']} bytes)" for f in files)
         return await super().execute_tool(tool_name, params)
 
+    def _build_worker_graph(self) -> GraphEngine:
+        builder = GraphEngine()
+        builder.set_entry_point("plan_node")
+
+        async def plan_node(state: dict) -> Command:
+            task = state.get("task", {})
+            context = state.get("context", "")
+            plan_prompt = f"""Analyze this task and create a plan:
+
+Title: {task.get('title', '')}
+Description: {task.get('description', '')}
+Priority: {task.get('priority', 'medium')}
+{context}
+
+Create a step-by-step plan to complete this task. List the files you need to create or modify."""
+            state["_plan"] = plan_prompt
+            return Command(goto="execute_node")
+
+        async def execute_node(state: dict) -> Command:
+            plan = state.get("_plan", "")
+            context = state.get("context", "")
+            task = state.get("task", {})
+            prompt = f"""You are working on the following task:
+
+Title: {task.get('title', '')}
+Description: {task.get('description', '')}
+Priority: {task.get('priority', 'medium')}
+{context}
+
+Plan: {plan[:500]}
+
+Please work on this task now. Think through the approach, implement the solution, and describe what you're doing. Use write_file tool when you write code files. Be thorough and detailed."""
+            state["_execute_prompt"] = prompt
+            builder = self._build_agent_graph()
+            graph = builder.compile()
+            graph_state: dict[str, Any] = {
+                "messages": self._build_messages(prompt),
+                "temperature": self.agent.temperature,
+                "provider": self.agent.provider,
+                "project_id": self.agent.project_id,
+                "agent_id": self.id,
+                "response": "",
+                "_tool_calls": [],
+                "_has_tool_calls": False,
+                "_new_content": "",
+                "_tool_results": [],
+            }
+            recall = await self._enrich_with_memories(prompt)
+            if recall:
+                graph_state["messages"][0]["content"] += recall
+            skills_block = await self._enrich_with_skills(prompt)
+            if skills_block:
+                graph_state["messages"][0]["content"] += skills_block
+            result = ""
+            async for snapshot in graph.stream(graph_state):
+                new_content = snapshot.get("_new_content", "")
+                if new_content:
+                    result += new_content
+            state["_result"] = result.strip()
+            return Command(goto="review_node")
+
+        async def review_node(state: dict) -> Command:
+            result = state.get("_result", "")
+            review_prompt = f"""Review this completed work:
+
+Title: {state.get('task', {}).get('title', '')}
+Result: {result[:1000]}
+
+Evaluate quality, completeness, and potential issues. Score 1-10."""
+            review = await self.think(review_prompt)
+            state["_review"] = review
+            return Command()
+
+        builder.add_node("plan_node", plan_node)
+        builder.add_node("execute_node", execute_node)
+        builder.add_node("review_node", review_node)
+        builder.add_edge("plan_node", "execute_node")
+        builder.add_edge("execute_node", "review_node")
+        builder.set_finish_point("review_node")
+        return builder
+
     async def work_on_task(self) -> str:
         if not self.current_task:
             return "No task assigned."
@@ -66,19 +149,21 @@ class WorkerAgent(BaseAgent):
             context = "\nRecent team chat:\n" + "\n".join(
                 f"[{m.sender_name}]: {m.content[:200]}" for m in recent[-10:]
             )
-        prompt = f"""You are working on the following task:
-
-Title: {self.current_task.title}
-Description: {self.current_task.description}
-Priority: {self.current_task.priority.value}
-{context}
-
-Please work on this task now. Think through the approach, implement the solution, and describe what you're doing. Use write_file tool when you write code files. Be thorough and detailed."""
-
-        result = ""
-        async for chunk in self.think_with_tools(prompt):
-            result += chunk
-        clean_result = result.strip()
+        state: dict[str, Any] = {
+            "task": {
+                "title": self.current_task.title,
+                "description": self.current_task.description,
+                "priority": self.current_task.priority.value,
+            },
+            "context": context,
+            "_plan": "",
+            "_result": "",
+            "_review": "",
+        }
+        graph = self._build_worker_graph().compile()
+        async for snapshot in graph.stream(state):
+            pass
+        clean_result = state.get("_result", "")
         self.current_task.status = TaskStatus.completed
         self.completed_tasks.append(self.current_task)
         self.agent.memory["completed_tasks"].append({

@@ -1,9 +1,11 @@
 import asyncio
 import logging
 from datetime import datetime
+from typing import Optional
 from app.models.agent import Agent, AgentStatus
 from app.core.event_bus import event_bus
 from app.db.repository import save_agent, save_lifecycle_audit
+from app.graph.checkpointer import SqliteSaver
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +20,6 @@ VALID_TRANSITIONS = {
     AgentStatus.error: {AgentStatus.idle, AgentStatus.retired},
     AgentStatus.retired: set(),
 }
-_NOTIFY_TRANSITIONS = {
-    AgentStatus.error, AgentStatus.retired,
-}
 
 NOTIFY_TRANSITIONS = {
     AgentStatus.error, AgentStatus.retired,
@@ -30,6 +29,10 @@ NOTIFY_TRANSITIONS = {
 class LifecycleEngine:
     def __init__(self, agent: Agent):
         self.agent = agent
+        self._checkpointer: Optional[SqliteSaver] = None
+
+    def set_checkpointer(self, cp: SqliteSaver):
+        self._checkpointer = cp
 
     async def transition_to(self, new_status: AgentStatus, reason: str = "") -> bool:
         old = self.agent.status
@@ -62,6 +65,9 @@ class LifecycleEngine:
             )
             asyncio.create_task(save_notification(n))
             await event_bus.publish("notification", n.model_dump())
+        if self._checkpointer:
+            thread_id = f"lifecycle:{self.agent.id}"
+            asyncio.create_task(self._checkpointer.put(thread_id, event))
         asyncio.create_task(save_lifecycle_audit({
             "project_id": self.agent.project_id,
             "agent_id": self.agent.id,

@@ -5,16 +5,20 @@ import logging
 import re
 import time
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 from app.models.agent import Agent, AgentStatus
 from app.services.lifecycle import LifecycleEngine
 from app.models.message import Message
 from app.models.ops import ExecutionLog
 from app.llm import llm_router
-from app.llm.base import ToolCallRequest
+from app.llm.base import ToolCallRequest, LLMResponse
 from app.core.event_bus import event_bus
 from app.db.repository import save_message, save_execution_log
 from app.tools.registry import tool_registry
+from app.graph.engine import GraphEngine, START, END
+from app.graph.types import Command
+from app.memory.context import ContextManager
+from app.memory.memfs import MemFS
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +29,16 @@ _TOOL_HANDLERS = {
     "web_search": lambda: __import__("app.services.tools.web_search", fromlist=["search"]).search,
     "browse": lambda: __import__("app.services.tools.browser", fromlist=["browse"]).browse,
     "screenshot": lambda: __import__("app.services.tools.browser", fromlist=["screenshot"]).screenshot,
+    "browser_navigate": lambda: __import__("app.services.tools.browser", fromlist=["browser_navigate"]).browser_navigate,
+    "browser_click": lambda: __import__("app.services.tools.browser", fromlist=["browser_click"]).browser_click,
+    "browser_type": lambda: __import__("app.services.tools.browser", fromlist=["browser_type"]).browser_type,
+    "browser_scroll": lambda: __import__("app.services.tools.browser", fromlist=["browser_scroll"]).browser_scroll,
+    "browser_extract": lambda: __import__("app.services.tools.browser", fromlist=["browser_extract"]).browser_extract,
+    "browser_list_tabs": lambda: __import__("app.services.tools.browser", fromlist=["browser_list_tabs"]).browser_list_tabs,
+    "browser_switch_tab": lambda: __import__("app.services.tools.browser", fromlist=["browser_switch_tab"]).browser_switch_tab,
     "run_python": lambda: __import__("app.services.tools.code_exec", fromlist=["run_python"]).run_python,
     "run_shell": lambda: __import__("app.services.tools.code_exec", fromlist=["run_shell"]).run_shell,
+    "coding_task": lambda: __import__("app.services.tools.code_exec", fromlist=["coding_task"]).coding_task,
     "http_get": lambda: __import__("app.services.tools.api_http", fromlist=["http_get"]).http_get,
     "http_post": lambda: __import__("app.services.tools.api_http", fromlist=["http_post"]).http_post,
     "http_put": lambda: __import__("app.services.tools.api_http", fromlist=["http_put"]).http_put,
@@ -63,6 +75,83 @@ class BaseAgent:
         self._running = False
         self._task: Optional[asyncio.Task] = None
         self._lifecycle = LifecycleEngine(agent)
+        self._graph: Optional[GraphEngine] = None
+        self._memfs: Optional[MemFS] = None
+        self._context_mgr: Optional[ContextManager] = None
+
+    def set_memfs(self, memfs: MemFS):
+        self._memfs = memfs
+        self._context_mgr = ContextManager(memfs)
+
+    def _build_agent_graph(self) -> GraphEngine:
+        builder = GraphEngine()
+        builder.set_entry_point("llm_call")
+
+        async def llm_call_node(state: dict) -> Command:
+            messages = state.get("messages", [])
+            temperature = state.get("temperature", 0.7)
+            provider_name = state.get("provider", self.agent.provider)
+            provider = llm_router.get_provider(provider_name)
+            use_native = provider and provider.supports_tools
+            tools = self._tools_for_provider() if use_native else []
+
+            try:
+                if use_native:
+                    content = ""
+                    tool_calls = []
+                    async for chunk in provider.chat_stream_with_tools(
+                        messages, temperature=temperature, max_tokens=4096, tools=tools,
+                    ):
+                        content += chunk
+                    tool_calls = getattr(provider, "_last_tool_calls", [])
+                    state["_new_content"] = content
+                else:
+                    response = await provider.chat(messages, temperature=temperature)
+                    action_tcs = self._parse_actions_to_tool_calls(response)
+                    content = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', response, flags=re.DOTALL).strip()
+                    state["_new_content"] = content
+                    tool_calls = action_tcs
+
+                state["_tool_calls"] = tool_calls
+                state["_has_tool_calls"] = len(tool_calls) > 0
+                if content:
+                    state.setdefault("response", "")
+                    state["response"] += content
+            except Exception as e:
+                logger.error("Agent %s llm_call error: %s", self.name, e)
+                state["_tool_calls"] = []
+                state["_has_tool_calls"] = False
+                if not state.get("response"):
+                    state["_new_content"] = "I encountered an error processing your request."
+
+            return Command()
+
+        async def route_node(state: dict) -> Command:
+            if state.get("_has_tool_calls"):
+                return Command(goto="tool_exec")
+            return Command(goto=END)
+
+        async def tool_exec_node(state: dict) -> Command:
+            tool_calls = state.get("_tool_calls", [])
+            messages = state.get("messages", [])
+            results = []
+            for tc in tool_calls:
+                result = await self._handle_tool_call(tc, state.get("project_id", self.agent.project_id))
+                messages.append({"role": "tool", "tool_call_id": tc.id, "content": result or "Done."})
+                results.append({"tool_call_id": tc.id, "result": result})
+            state["_tool_calls"] = []
+            state["_has_tool_calls"] = False
+            state["_tool_results"] = results
+            return Command()
+
+        builder.add_node("llm_call", llm_call_node)
+        builder.add_node("route", route_node)
+        builder.add_node("tool_exec", tool_exec_node)
+        builder.add_edge("llm_call", "route")
+        builder.add_conditional_edges("route", lambda s: "tool_exec" if s.get("_has_tool_calls") else END, {"tool_exec": "tool_exec"})
+        builder.add_edge("tool_exec", "llm_call")
+        builder.set_finish_point("route")
+        return builder
 
     @property
     def id(self) -> str:
@@ -170,6 +259,22 @@ class BaseAgent:
             project_id=self.agent.project_id,
             mission=self.agent.mission,
         )
+        if self._context_mgr and self._memfs:
+            try:
+                import asyncio
+                future = asyncio.ensure_future(self._context_mgr.compose_prompt(
+                    project_id=self.agent.project_id,
+                    base_system=system,
+                    recent_history=self.agent.chat_history[-20:],
+                    query=prompt,
+                ))
+                return future.result() if future.done() else [
+                    {"role": "system", "content": system},
+                    *self.agent.chat_history[-10:],
+                    {"role": "user", "content": prompt},
+                ]
+            except Exception:
+                pass
         from app.agents.context_compressor import compress_history
         history = compress_history(self.agent.chat_history)
         return [
@@ -273,9 +378,6 @@ class BaseAgent:
 
     async def think_with_tools(self, prompt: str, temperature: Optional[float] = None):
         await self.set_status(AgentStatus.thinking)
-        provider = llm_router.get_provider(self.agent.provider)
-        use_native = provider and provider.supports_tools
-        tools = self._tools_for_provider() if use_native else []
 
         messages = self._build_messages(prompt)
         recall = await self._enrich_with_memories(prompt)
@@ -284,61 +386,52 @@ class BaseAgent:
         skills_block = await self._enrich_with_skills(prompt)
         if skills_block:
             messages[0]["content"] += skills_block
-        max_iterations = 10
+
+        builder = self._build_agent_graph()
+        graph = builder.compile()
+        state: dict[str, Any] = {
+            "messages": messages,
+            "temperature": temperature or self.agent.temperature,
+            "provider": self.agent.provider,
+            "project_id": self.agent.project_id,
+            "agent_id": self.id,
+            "response": "",
+            "_tool_calls": [],
+            "_has_tool_calls": False,
+            "_new_content": "",
+            "_tool_results": [],
+        }
+
         full_response = ""
         first_content = True
+        _t0 = time.perf_counter()
 
-        for iteration in range(max_iterations):
-            _t0 = time.perf_counter()
-            content = ""
-            tool_calls: list[ToolCallRequest] = []
-
-            try:
-                if use_native:
-                    async for chunk in provider.chat_stream_with_tools(
-                        messages, temperature=temperature or self.agent.temperature,
-                        max_tokens=4096, tools=tools,
-                    ):
-                        if chunk:
-                            content += chunk
-                            if first_content:
-                                full_response = content
-                                first_content = False
-                            yield chunk
-                    tool_calls = provider._last_tool_calls
-                else:
-                    response = await provider.chat(
-                        messages, temperature=temperature or self.agent.temperature,
-                    )
-                    action_tcs = self._parse_actions_to_tool_calls(response)
-                    content = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', response, flags=re.DOTALL).strip()
-                    if content:
-                        yield content
-                    tool_calls = action_tcs
-            except Exception as e:
-                logger.error("Agent %s think_with_tools iteration %d error: %s", self.name, iteration, e)
-                if iteration == 0:
-                    yield "I encountered an error processing your request. Please try again."
-                break
-
-            await self._log_execution(prompt if iteration == 0 else f"[tool iteration {iteration}]", content, "completed", int((time.perf_counter() - _t0) * 1000))
-
-            if not tool_calls:
-                if not content and iteration > 0:
-                    yield "Done."
-                break
-
-            for tc in tool_calls:
-                result = await self._handle_tool_call(tc, self.agent.project_id)
-                messages.append({"role": "tool", "tool_call_id": tc.id, "content": result or "Done."})
-
-        self.agent.chat_history.append({"role": "user", "content": prompt})
-        self.agent.chat_history.append({"role": "assistant", "content": full_response or content})
-        if full_response or content:
-            self.agent.memory["short_term"].append({"prompt": prompt, "response": full_response or content})
-        asyncio.create_task(self._save_conversation_memories(prompt, full_response or content))
-        asyncio.create_task(self._trigger_curation(prompt, full_response or content))
-        await self.set_status(AgentStatus.idle)
+        try:
+            async for snapshot in graph.stream(state):
+                new_content = snapshot.get("_new_content", "")
+                if new_content:
+                    if first_content:
+                        full_response = new_content
+                        first_content = False
+                    else:
+                        full_response += new_content
+                    yield new_content
+                    state["_new_content"] = ""
+        except Exception as e:
+            logger.error("Agent %s graph execution error: %s", self.name, e)
+            if not full_response:
+                yield "I encountered an error processing your request."
+        finally:
+            latency = int((time.perf_counter() - _t0) * 1000)
+            last_response = full_response or state.get("response", "")
+            await self._log_execution(prompt, last_response, "completed", latency)
+            self.agent.chat_history.append({"role": "user", "content": prompt})
+            self.agent.chat_history.append({"role": "assistant", "content": last_response})
+            if last_response:
+                self.agent.memory["short_term"].append({"prompt": prompt, "response": last_response})
+            asyncio.create_task(self._save_conversation_memories(prompt, last_response))
+            asyncio.create_task(self._trigger_curation(prompt, last_response))
+            await self.set_status(AgentStatus.idle)
 
     async def _save_conversation_memories(self, user_input: str, response: str):
         from app.memory.manager import memory_manager
