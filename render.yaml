@@ -18,7 +18,7 @@ services:
       - key: OMNIROUTE_API_KEY
         sync: false
       - key: OMNIROUTE_BASE_URL
-        value: https://louis-leasing-geo-plays.trycloudflare.com/v1
+        value: https://previews-sustained-numerical-programmers.trycloudflare.com/v1
       - key: LLM_DEFAULT_PROVIDER
         value: omniroute
       - key: LLM_DEFAULT_MODEL
