@@ -321,6 +321,7 @@ class BaseAgent:
         if full_response or content:
             self.agent.memory["short_term"].append({"prompt": prompt, "response": full_response or content})
         asyncio.create_task(self._save_conversation_memories(prompt, full_response or content))
+        asyncio.create_task(self._trigger_curation(prompt, full_response or content))
         await self.set_status(AgentStatus.idle)
 
     async def _save_conversation_memories(self, user_input: str, response: str):
@@ -338,6 +339,18 @@ class BaseAgent:
             })
         except Exception as e:
             logger.warning("save_conversation_memories failed: %s", e)
+
+    async def _trigger_curation(self, user_input: str, response: str):
+        from app.curation.loop import run_curation_loop
+        try:
+            await run_curation_loop(
+                user_msg=user_input,
+                agent_resp=response,
+                project_id=self.agent.project_id,
+                agent_id=self.id,
+            )
+        except Exception as e:
+            logger.warning("curation loop failed: %s", e)
 
     async def _log_execution(self, prompt: str, response: str, status: str, latency_ms: int):
         try:

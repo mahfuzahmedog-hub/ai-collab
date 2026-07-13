@@ -382,6 +382,34 @@ class MemoryManager:
         )
         await self._conn.commit()
 
+    async def prune(self, project_id: Optional[str] = None, importance_threshold: float = 0.2, max_memories: int = 500) -> int:
+        await self._ensure_db()
+        count_sql = "SELECT COUNT(*) as cnt FROM memories"
+        del_sql = "DELETE FROM memories WHERE id IN ("
+        fts_sql = "DELETE FROM memories_fts WHERE mem_id IN ("
+        params: list[Any] = []
+        if project_id:
+            count_sql += " WHERE project_id = ?"
+            params.append(project_id)
+        cursor = await self._conn.execute(count_sql, params)
+        row = await cursor.fetchone()
+        total = row["cnt"] if row else 0
+        if total <= max_memories:
+            return 0
+        excess = total - max_memories
+        sub = "SELECT id FROM memories WHERE importance < ?"
+        sub_params: list[Any] = [importance_threshold]
+        if project_id:
+            sub += " AND project_id = ?"
+            sub_params.append(project_id)
+        sub += " ORDER BY importance ASC, last_accessed ASC LIMIT ?"
+        sub_params.append(excess)
+        sub_query = f"({sub})"
+        await self._conn.execute(del_sql + sub_query + ")", sub_params)
+        await self._conn.execute(fts_sql + sub_query + ")", sub_params)
+        await self._conn.commit()
+        return excess
+
     async def close(self):
         if self._conn:
             await self._conn.close()
