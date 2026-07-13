@@ -429,8 +429,32 @@ class CoworkerAgent(BaseAgent):
                 if "facts" not in self.agent.memory:
                     self.agent.memory["facts"] = {}
                 self.agent.memory["facts"][key] = value
+                from app.memory.manager import memory_manager
+                asyncio.create_task(memory_manager.save({
+                    "type": "fact", "content": f"{key}: {value}",
+                    "scope": "project", "source": "conversation",
+                    "project_id": self.project.id, "agent_id": self.id,
+                    "importance": 0.8, "tags": ["fact", key],
+                }))
                 return f"Remembered: {key} = {value}"
             return "No key/value provided."
+        elif t == "forget_memory":
+            mem_id = action.get("mem_id", "")
+            if mem_id:
+                from app.memory.manager import memory_manager
+                ok = await memory_manager.forget(mem_id)
+                return f"Memory {mem_id} deleted." if ok else f"Memory {mem_id} not found."
+            return "No mem_id provided."
+        elif t == "search_memories":
+            query = action.get("query", "")
+            type_filter = action.get("type_filter")
+            if query:
+                from app.memory.manager import memory_manager
+                results = await memory_manager.search(query, project_id=self.project.id, type_filter=type_filter, limit=5)
+                if results:
+                    return "\n".join(f"[{m['type']}] {m['content'][:200]}" for m in results)
+                return "No memories found."
+            return "No query provided."
         elif t == "create_task":
             assign_to = action.get("assign_to", "")
             assigned_role = None

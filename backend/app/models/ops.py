@@ -63,6 +63,11 @@ class Memory(BaseModel):
     scope: str = "project"
     type: str = "fact"
     content: str
+    source: str = "conversation"
     tags: list[str] = Field(default_factory=list)
+    importance: float = 0.5
+    access_count: int = 0
+    metadata: dict = Field(default_factory=dict)
     embedding: Optional[list[float]] = None
     created_at: str = Field(default_factory=_utcnow)
+    last_accessed: str = Field(default_factory=_utcnow)

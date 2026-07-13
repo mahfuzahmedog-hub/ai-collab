@@ -13,7 +13,7 @@ from app.models.ops import ExecutionLog
 from app.llm import llm_router
 from app.llm.base import ToolCallRequest
 from app.core.event_bus import event_bus
-from app.db.repository import save_message, save_execution_log, load_memories, search_memories
+from app.db.repository import save_message, save_execution_log
 from app.tools.registry import tool_registry
 
 logger = logging.getLogger(__name__)
@@ -161,16 +161,21 @@ class BaseAgent:
         ]
 
     async def _enrich_with_memories(self, prompt: str) -> str:
-        block = ""
+        from app.memory.manager import memory_manager
         try:
-            memories = await search_memories(self.agent.project_id, prompt, limit=5, agent_id=self.id)
+            memories = await memory_manager.search(prompt, project_id=self.agent.project_id, agent_id=self.id, limit=5)
             if not memories:
-                memories = await load_memories(self.agent.project_id, self.id, limit=20)
+                memories = await memory_manager.recall(self.agent.project_id, agent_id=self.id, limit=20)
             if memories:
-                block = "\nRecall:\n" + "\n".join(f"[{m.type}] {m.content[:200]}" for m in memories)
+                lines = []
+                for m in memories:
+                    type_tag = m.get("type", "fact")
+                    content = m.get("content", "")[:200]
+                    lines.append(f"[{type_tag}] {content}")
+                return "\nRecall:\n" + "\n".join(lines)
         except Exception:
             pass
-        return block
+        return ""
 
     async def think(self, prompt: str, temperature: Optional[float] = None) -> str:
         await self.set_status(AgentStatus.thinking)
@@ -298,7 +303,24 @@ class BaseAgent:
         self.agent.chat_history.append({"role": "assistant", "content": full_response or content})
         if full_response or content:
             self.agent.memory["short_term"].append({"prompt": prompt, "response": full_response or content})
+        asyncio.create_task(self._save_conversation_memories(prompt, full_response or content))
         await self.set_status(AgentStatus.idle)
+
+    async def _save_conversation_memories(self, user_input: str, response: str):
+        from app.memory.manager import memory_manager
+        try:
+            await memory_manager.save({
+                "type": "conversation",
+                "content": f"User: {user_input[:500]}\nAssistant: {response[:500]}",
+                "scope": "project",
+                "source": "conversation",
+                "project_id": self.agent.project_id,
+                "agent_id": self.id,
+                "importance": 0.6,
+                "tags": ["conversation", self.agent.provider or ""],
+            })
+        except Exception as e:
+            logger.warning("save_conversation_memories failed: %s", e)
 
     async def _log_execution(self, prompt: str, response: str, status: str, latency_ms: int):
         try:

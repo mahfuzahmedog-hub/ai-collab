@@ -295,11 +295,28 @@ create_issue = ToolDefinition(
     }, ["repo", "title"]),
 )
 
+forget_memory = ToolDefinition(
+    name="forget_memory",
+    description="Delete a specific memory by its ID.",
+    parameters=_O({
+        "mem_id": _S("Memory ID to delete"),
+    }, ["mem_id"]),
+)
+
+search_memories_tool = ToolDefinition(
+    name="search_memories",
+    description="Search the memory store for relevant information.",
+    parameters=_O({
+        "query": _S("Search query"),
+        "type_filter": _S("Optional memory type filter: fact, conversation, decision, code, user_preference, user_profile"),
+    }, ["query"]),
+)
+
 ALL_TOOLS = [
     create_agent, evolve_agent, merge_agents, split_agent, retire_agent,
     create_channel, create_subchannel, rename_channel, move_channel, delete_channel,
     create_thread,
-    register_tool, remove_tool, create_knowledge_base, remember_fact,
+    register_tool, remove_tool, create_knowledge_base, remember_fact, forget_memory, search_memories_tool,
     create_task,
     write_file, read_file, list_files,
     http_get, http_post, http_put, http_delete,

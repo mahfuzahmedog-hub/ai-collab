@@ -20,6 +20,12 @@ async def lifespan(app: FastAPI):
     register_all_schemas()
     logger.info("Tool schemas registered")
     try:
+        from app.memory.manager import memory_manager
+        await memory_manager._ensure_db()
+        logger.info("Memory manager initialized")
+    except Exception as e:
+        logger.warning("Memory manager init skipped: %s", e)
+    try:
         from app.db.session import init_db
         await init_db()
         logger.info("Database tables created")
