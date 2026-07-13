@@ -264,15 +264,7 @@ class BaseAgent:
         return tool_registry.to_openai_schemas()
 
     def _build_messages(self, prompt: str) -> list[dict]:
-        from app.agents.prompt_builder import build_system_prompt
-        system = build_system_prompt(
-            name=self.name,
-            role=str(self.agent.role),
-            personality=self.agent.personality,
-            skills=self.agent.skills,
-            project_id=self.agent.project_id,
-            mission=self.agent.mission,
-        )
+        system = self._system_prompt()
         if self._context_mgr and self._memfs:
             try:
                 import asyncio
