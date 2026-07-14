@@ -227,17 +227,18 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
 
     elif command == "retire_agent":
         agent_id = args.get("agent_id", "")
-        if agent_manager.boss and agent_id in agent_manager.boss.team:
-            removed = agent_manager.boss.team.pop(agent_id)
-            await removed.set_status(AgentStatus.retired, "Retired by user")
-            if agent_manager.boss.project:
-                agent_manager.boss.project.agent_ids = [aid for aid in agent_manager.boss.project.agent_ids if aid != agent_id]
-            await event_bus.publish("agent_removed", {"agent_id": agent_id, "agent_name": removed.name, "project_id": project_id})
-            await ws.send_text(json.dumps({"type": "agent_retired", "agent_id": agent_id}))
-        else:
-            await agent_manager.remove_agent(agent_id)
-            await event_bus.publish("agent_removed", {"agent_id": agent_id, "project_id": project_id})
-            await ws.send_text(json.dumps({"type": "agent_retired", "agent_id": agent_id}))
+        try:
+            if agent_manager.boss and agent_id in agent_manager.boss.team:
+                agent_manager.boss.team.pop(agent_id)
+                if agent_manager.boss.project:
+                    agent_manager.boss.project.agent_ids = [aid for aid in agent_manager.boss.project.agent_ids if aid != agent_id]
+                await event_bus.publish("agent_removed", {"agent_id": agent_id, "project_id": project_id})
+            else:
+                await agent_manager.remove_agent(agent_id)
+                await event_bus.publish("agent_removed", {"agent_id": agent_id, "project_id": project_id})
+        except Exception:
+            pass
+        await ws.send_text(json.dumps({"type": "agent_retired", "agent_id": agent_id}))
 
     elif command == "create_channel":
         from app.models.channel import Channel
