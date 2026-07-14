@@ -12,14 +12,6 @@ asyncpg
 pgvector
 playwright
 Pillow
-openai
-pypdf
+
 PyYAML
-slack-sdk
-python-telegram-bot
-discord.py
-twilio
-elevenlabs
-pytesseract
-trafilatura
-opencv-python-headless
+

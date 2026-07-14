@@ -2,7 +2,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 from app.llm.base import LLMProvider, LLMResponse
-from app.llm.providers import OpenAIProvider, GroqProvider, GeminiProvider, AnthropicProvider, OllamaProvider, OpenRouterProvider, OmniRouteProvider
+from app.llm.providers import OllamaProvider, OmniRouteProvider
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -14,16 +14,6 @@ class LLMRouter:
         self._register_configured()
 
     def _register_configured(self):
-        if settings.openai_api_key:
-            self.register("openai", OpenAIProvider())
-        if settings.groq_api_key:
-            self.register("groq", GroqProvider())
-        if settings.google_api_key:
-            self.register("gemini", GeminiProvider())
-        if settings.anthropic_api_key:
-            self.register("anthropic", AnthropicProvider())
-        if settings.openrouter_api_key:
-            self.register("openrouter", OpenRouterProvider())
         if settings.omniroute_api_key:
             self.register("omniroute", OmniRouteProvider())
         self.register("ollama", OllamaProvider())
