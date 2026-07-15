@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useStore } from "@/store";
-import { FileText, Folder, Bot, Loader2, Code } from "lucide-react";
+import { FileText, Folder, Bot, Loader2, Code, PauseCircle, PlayCircle, Trash2 } from "lucide-react";
+import { sendPauseAgent, sendResumeAgent, sendRemoveAgent } from "@/lib/websocket";
 import type { FileNode, AgentStatus } from "@/types";
 
 interface FileTreeProps {
@@ -163,6 +164,11 @@ function AgentList() {
                 Working on: {worker.current_task_id}
               </div>
             )}
+            <div className="flex items-center gap-1 mt-2 pt-2 border-t border-dark-700">
+              <button onClick={() => sendPauseAgent(worker.id)} className="flex-1 flex items-center justify-center gap-1 text-xs text-yellow-400 hover:bg-dark-700 py-1 rounded transition-colors" title="Pause"><PauseCircle className="w-3 h-3" /> Pause</button>
+              <button onClick={() => sendResumeAgent(worker.id)} className="flex-1 flex items-center justify-center gap-1 text-xs text-green-400 hover:bg-dark-700 py-1 rounded transition-colors" title="Resume"><PlayCircle className="w-3 h-3" /> Resume</button>
+              <button onClick={() => sendRemoveAgent(worker.id)} className="flex-1 flex items-center justify-center gap-1 text-xs text-red-400 hover:bg-dark-700 py-1 rounded transition-colors" title="Remove"><Trash2 className="w-3 h-3" /></button>
+            </div>
           </div>
         ))}
       </div>

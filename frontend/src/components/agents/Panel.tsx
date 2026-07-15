@@ -17,7 +17,7 @@ export function AgentsPage() {
 
   const handleCreate = () => {
     if (!newName.trim()) return;
-    sendCommand("add_agent", { name: newName.trim(), role: newRole.trim() || "engineer" });
+    sendCommand("create_agent", { name: newName.trim(), role: newRole.trim() || "engineer", display_name: newName.trim(), mission: "", personality: "professional and collaborative", skills: [newRole.trim() || "engineer"], channel: "general" });
     setNewName("");
     setNewRole("");
     setShowForm(false);

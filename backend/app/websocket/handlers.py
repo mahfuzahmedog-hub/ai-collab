@@ -124,6 +124,12 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected: project=%s", project_id)
+    except Exception as e:
+        logger.error("WebSocket error for project %s: %s", project_id, e)
+        try:
+            await ws_manager.broadcast(project_id, {"type": "message", "id": f"err-{uuid4().hex[:8]}", "project_id": project_id, "sender_id": "system", "sender_name": "System", "sender_role": "system", "content": f"Connection error: {e}", "msg_type": "system", "channel": "general", "timestamp": datetime.utcnow().isoformat() + "Z"})
+        except Exception:
+            pass
     finally:
         event_bus.unsubscribe("*", on_event)
         await ws_manager.disconnect(websocket, project_id)
@@ -564,6 +570,18 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             await event_bus.publish("agent_removed", {"agent_id": agent_id, "project_id": project_id})
         elif agent_manager.boss and agent_manager.boss.id == agent_id:
             await ws.send_text(json.dumps({"type": "error", "message": "Cannot remove the Coworker agent."}))
+        else:
+            await agent_manager.remove_agent(agent_id)
+            await event_bus.publish("agent_removed", {"agent_id": agent_id, "project_id": project_id})
+
+    elif command == "delete_channel":
+        from app.db.repository import delete_channel as _delete_ch
+        cid = args.get("id", "")
+        if cid:
+            deleted = await _delete_ch(project_id, cid)
+            if deleted:
+                await ws_manager.broadcast(project_id, {"type": "channel_deleted", "project_id": project_id, "ids": deleted})
+                await ws.send_text(json.dumps({"type": "channel_deleted", "ids": deleted}))
 
     elif command == "mark_notification_read":
         from app.db.repository import mark_notification_read

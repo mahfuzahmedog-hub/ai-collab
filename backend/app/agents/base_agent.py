@@ -145,7 +145,7 @@ class BaseAgent:
                     try:
                         state["_new_content"] = (await provider.chat(retry_messages, temperature=temperature)) or ""
                     except Exception:
-                        state["_new_content"] = "I encountered an error processing your request."
+                        state["_new_content"] = f"LLM error: {e}"
 
             return Command()
 
@@ -342,7 +342,7 @@ class BaseAgent:
         except Exception as e:
             logger.error("Agent %s think error: %s", self.name, e)
             _status = "failed"
-            response = "I received your request but the LLM service is currently unavailable."
+            response = f"LLM error: {e}"
         await self._log_execution(prompt, response, _status, int((time.perf_counter() - _t0) * 1000))
         self.agent.chat_history.append({"role": "user", "content": prompt})
         self.agent.chat_history.append({"role": "assistant", "content": response})
@@ -435,7 +435,7 @@ class BaseAgent:
         except Exception as e:
             logger.error("Agent %s graph execution error: %s", self.name, e)
             if not full_response:
-                yield "I encountered an error processing your request."
+                yield f"LLM error: {e}"
         finally:
             latency = int((time.perf_counter() - _t0) * 1000)
             last_response = full_response or state.get("response", "")

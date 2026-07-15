@@ -121,7 +121,7 @@ export function SettingsPanel() {
               )}
 
               <div className="text-xs text-dark-500 space-y-1">
-                <p>Paste your Zen API key from any account. Comma-separate multiple keys for quota rotation.</p>
+                <p>Paste your Zen API key(s). Comma-separate multiple keys for automatic quota rotation.</p>
                 <p>Key is saved in your browser and auto-connected on reload.</p>
               </div>
             </div>

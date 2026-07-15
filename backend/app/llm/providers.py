@@ -88,11 +88,15 @@ class ZenProvider(LLMProvider):
         key = self._next_key()
         url = f"{self.config.base_url}/chat/completions"
         headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-        if stream:
-            return await self._client.stream("POST", url, headers=headers, json=body, timeout=120)
-        resp = await self._client.post(url, headers=headers, json=body, timeout=120)
-        resp.raise_for_status()
-        return resp
+        try:
+            if stream:
+                return await self._client.stream("POST", url, headers=headers, json=body, timeout=120)
+            resp = await self._client.post(url, headers=headers, json=body, timeout=120)
+            resp.raise_for_status()
+            return resp
+        except httpx.HTTPStatusError as e:
+            msg = {401: "Invalid Zen API key. Add a valid key in Settings.", 403: "Zen API access denied. Check your key permissions.", 429: "Rate limited. Add more API keys (comma-separate in Settings)."}.get(e.response.status_code, f"Zen API error (HTTP {e.response.status_code}).")
+            raise RuntimeError(msg)
 
     async def chat(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096) -> str:
         async with _zen_sem:
@@ -104,22 +108,26 @@ class ZenProvider(LLMProvider):
     async def chat_stream(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096):
         async with _zen_sem:
             body = {"model": self.config.model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": True}
-            async with await self._request(body, stream=True) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    chunk = line[6:]
-                    if chunk.strip() == "[DONE]":
-                        break
-                    try:
-                        data = json.loads(chunk)
-                    except json.JSONDecodeError:
-                        continue
-                    delta = (data.get("choices") or [{}])[0].get("delta", {}) or {}
-                    content = delta.get("content") or delta.get("reasoning_content", "")
-                    if content:
-                        yield content
+            try:
+                async with await self._request(body, stream=True) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        chunk = line[6:]
+                        if chunk.strip() == "[DONE]":
+                            break
+                        try:
+                            data = json.loads(chunk)
+                        except json.JSONDecodeError:
+                            continue
+                        delta = (data.get("choices") or [{}])[0].get("delta", {}) or {}
+                        content = delta.get("content") or delta.get("reasoning_content", "")
+                        if content:
+                            yield content
+            except httpx.HTTPStatusError as e:
+                msg = {401: "Invalid Zen API key. Add a valid key in Settings.", 403: "Zen API access denied.", 429: "Rate limited. Add more API keys."}.get(e.response.status_code, f"Zen API error (HTTP {e.response.status_code}).")
+                raise RuntimeError(msg)
 
     async def chat_with_tools(self, messages: list[dict], temperature: float = 0.7, max_tokens: int = 4096, tools: list[dict] | None = None) -> LLMResponse:
         async with _zen_sem:
@@ -139,36 +147,40 @@ class ZenProvider(LLMProvider):
             if tools:
                 body["tools"] = tools
             tool_calls_acc: dict[int, dict] = {}
-            async with await self._request(body, stream=True) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    chunk = line[6:]
-                    if chunk.strip() == "[DONE]":
-                        break
-                    try:
-                        data = json.loads(chunk)
-                    except json.JSONDecodeError:
-                        continue
-                    choices = data.get("choices")
-                    if not choices:
-                        continue
-                    first = choices[0] or {}
-                    delta = first.get("delta", {}) or {}
-                    content = delta.get("content") or delta.get("reasoning_content", "")
-                    if content:
-                        yield content
-                    for tc in delta.get("tool_calls", []):
-                        idx = tc["index"]
-                        if idx not in tool_calls_acc:
-                            tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
-                        if tc.get("id"):
-                            tool_calls_acc[idx]["id"] = tc["id"]
-                        if tc.get("function", {}).get("name"):
-                            tool_calls_acc[idx]["name"] = tc["function"]["name"]
-                        if tc.get("function", {}).get("arguments"):
-                            tool_calls_acc[idx]["arguments"] += tc["function"]["arguments"]
+            try:
+                async with await self._request(body, stream=True) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        chunk = line[6:]
+                        if chunk.strip() == "[DONE]":
+                            break
+                        try:
+                            data = json.loads(chunk)
+                        except json.JSONDecodeError:
+                            continue
+                        choices = data.get("choices")
+                        if not choices:
+                            continue
+                        first = choices[0] or {}
+                        delta = first.get("delta", {}) or {}
+                        content = delta.get("content") or delta.get("reasoning_content", "")
+                        if content:
+                            yield content
+                        for tc in delta.get("tool_calls", []):
+                            idx = tc["index"]
+                            if idx not in tool_calls_acc:
+                                tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
+                            if tc.get("id"):
+                                tool_calls_acc[idx]["id"] = tc["id"]
+                            if tc.get("function", {}).get("name"):
+                                tool_calls_acc[idx]["name"] = tc["function"]["name"]
+                            if tc.get("function", {}).get("arguments"):
+                                tool_calls_acc[idx]["arguments"] += tc["function"]["arguments"]
+            except httpx.HTTPStatusError as e:
+                msg = {401: "Invalid Zen API key. Add a valid key in Settings.", 403: "Zen API access denied.", 429: "Rate limited. Add more API keys."}.get(e.response.status_code, f"Zen API error (HTTP {e.response.status_code}).")
+                raise RuntimeError(msg)
             if tool_calls_acc:
                 for _, tc in sorted(tool_calls_acc.items()):
                     yield "", [ToolCallRequest(id=tc["id"], name=tc["name"], arguments=tc["arguments"])]

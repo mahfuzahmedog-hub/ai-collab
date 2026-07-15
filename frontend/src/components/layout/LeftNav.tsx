@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useStore } from "@/store";
-import { Hash, MessageSquare, Plus } from "lucide-react";
-import { sendCreateChannel } from "@/lib/websocket";
+import { Hash, MessageSquare, Plus, X } from "lucide-react";
+import { sendCreateChannel, sendCommand } from "@/lib/websocket";
 import type { Channel } from "@/types";
 
 export function LeftNav() {
@@ -16,6 +16,7 @@ export function LeftNav() {
   const threads = useStore((s) => s.threads);
   const project = useStore((s) => s.project);
   const connected = useStore((s) => s.connected);
+  const removeChannels = useStore((s) => s.removeChannels);
   const [showCreateChannel, setShowCreateChannel] = useState(false);
   const [newChannelName, setNewChannelName] = useState("");
   const [newChannelParent, setNewChannelParent] = useState("");
@@ -38,7 +39,7 @@ export function LeftNav() {
       <li key={ch.id}>
         <button
           onClick={() => setActiveChannel(ch.id)}
-          className={`w-full px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 transition-colors ${
+          className={`w-full px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 transition-colors group ${
             activeChannel === ch.id
               ? "bg-primary-600/20 text-white"
               : "text-dark-300 hover:bg-dark-700 hover:text-white"
@@ -49,6 +50,15 @@ export function LeftNav() {
           <span className="truncate text-xs">{ch.name}</span>
           {threads.some((t) => t.channel === ch.id) && (
             <span className="ml-auto w-2 h-2 rounded-full bg-primary-500" title="Has active threads" />
+          )}
+          {ch.type !== "category" && (
+            <button
+              onClick={(e) => { e.stopPropagation(); sendCommand("delete_channel", { id: ch.id }); removeChannels([ch.id]); }}
+              className="ml-auto p-0.5 rounded text-dark-500 hover:text-red-400 hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-all"
+              title="Delete channel"
+            >
+              <X className="w-3 h-3" />
+            </button>
           )}
         </button>
         {kids.length > 0 && (
