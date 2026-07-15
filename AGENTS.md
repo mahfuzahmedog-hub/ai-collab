@@ -35,6 +35,16 @@ Not lazy about: understanding the problem (read it fully and trace the real flow
 
 - GitHub repo: `mahfuzahmedog-hub/ai-collab` (master branch)
 - Backend URL: `https://ai-collab-backend-j6xe.onrender.com`
-- To deploy: Render Dashboard → Manual Deploy → Deploy latest commit
-- GH Actions workflow at `.github/workflows/deploy.yml` triggers via `RENDER_DEPLOY_HOOK_URL` secret
-- **OmniRoute tunnel broken**: all models return 403/404. Need a Groq API key or alternative LLM provider configured in Render dashboard env vars.
+- Service ID: `srv-d971m9e8bjmc73b0nmq0` (Render API key: `rnd_K2LONxwOWJ5Sj3Irki4IujzjjoD8`)
+- `render.yaml` at repo root (not `backend/render.yaml`)
+- Auto-deploy is ON (triggers on push to master) but builds have been failing; use manual or API for reliable deploys
+
+### Deploy methods (in order of preference):
+1. **Automated via GH Actions** — push to `master` triggers `.github/workflows/deploy.yml`. Needs `RENDER_API_KEY` secret set in GitHub repo settings → Secrets and variables → Actions → Add `RENDER_API_KEY` = the key above. Once set, deploys happen automatically.
+2. **Render API** — `curl -X POST -H "Authorization: Bearer $RENDER_API_KEY" "https://api.render.com/v1/services/srv-d971m9e8bjmc73b0nmq0/deploys"`
+3. **Render Dashboard** → ai-collab-backend → Manual Deploy → Deploy latest commit
+
+### Important notes
+- Render free tier cold-starts add ~15-30s latency
+- Playwright/chromium NOT installed in build (too heavy for free tier); only `pip install -r requirements.txt`
+- Database (Postgres) is on Render free tier — may spin down after inactivity
