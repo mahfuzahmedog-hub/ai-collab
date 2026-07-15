@@ -268,7 +268,7 @@ class MemoryManager:
 
     async def get_embedding(self, text: str) -> list[float]:
         from app.llm import llm_router
-        provider = llm_router.get_provider("omniroute")
+        provider = llm_router.get_provider("zen")
         if provider and hasattr(provider, "_client"):
             try:
                 resp = await provider._client.post(

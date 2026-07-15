@@ -13,5 +13,7 @@ pgvector
 playwright
 Pillow
 
+crawl4ai
+
 PyYAML
 

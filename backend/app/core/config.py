@@ -16,12 +16,12 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./data/ai_collab.db"
     redis_url: str = "redis://localhost:6379/0"
 
-    llm_default_provider: str = "omniroute"
-    llm_default_model: str = "groq/llama-3.1-8b-instant"
+    llm_default_provider: str = "zen"
+    llm_default_model: str = "deepseek-v4-flash-free"
 
-    omniroute_api_key: Optional[str] = None
-    omniroute_base_url: str = "https://previews-sustained-numerical-programmers.trycloudflare.com/v1"
-    omniroute_default_model: str = "groq/llama-3.1-8b-instant"
+    zen_api_key: Optional[str] = None
+    zen_base_url: str = "https://opencode.ai/zen/v1"
+    zen_default_model: str = "deepseek-v4-flash-free"
     github_token: Optional[str] = None
     ollama_base_url: str = "http://localhost:11434"
 

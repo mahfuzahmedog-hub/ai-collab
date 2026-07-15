@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from app.core.config import settings
 
 router = APIRouter(prefix="/api", tags=["health"])
 
@@ -20,5 +21,5 @@ async def info():
     from app.llm import llm_router
     return {
         "providers": llm_router.list_providers(),
-        "default_provider": "openai",
+        "default_provider": settings.llm_default_provider,
     }

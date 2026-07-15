@@ -29,6 +29,7 @@ _TOOL_HANDLERS = {
     "web_search": lambda: __import__("app.services.tools.web_search", fromlist=["search"]).search,
     "browse": lambda: __import__("app.services.tools.browser", fromlist=["browse"]).browse,
     "screenshot": lambda: __import__("app.services.tools.browser", fromlist=["screenshot"]).screenshot,
+    "crawl": lambda: __import__("app.services.tools.deep_crawl", fromlist=["crawl"]).crawl,
     "browser_navigate": lambda: __import__("app.services.tools.browser", fromlist=["browser_navigate"]).browser_navigate,
     "browser_click": lambda: __import__("app.services.tools.browser", fromlist=["browser_click"]).browser_click,
     "browser_type": lambda: __import__("app.services.tools.browser", fromlist=["browser_type"]).browser_type,

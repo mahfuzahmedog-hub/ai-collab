@@ -8,18 +8,15 @@ logger = logging.getLogger(__name__)
 
 _embedding_cache: dict[str, list[float]] = {}
 
-EMBEDDING_MODEL = "voyage-ai/voyage-3"
-EMBEDDING_DIM = 1024
+EMBEDDING_MODEL = "text-embedding-3-small"
+EMBEDDING_DIM = 1536
 
-# ponytail: omniroute accepts one key per request, but settings may hold a
-# comma-joined multi-key string (used for rotation on rate limits). Pick a
-# single key per call, rotating like OmniRouteProvider._next_key().
-_omni_keys = [k.strip() for k in (settings.omniroute_api_key or "").split(",") if k.strip()]
-_omni_key_iter = itertools.cycle(_omni_keys) if _omni_keys else iter(())
+_zen_keys = [k.strip() for k in (settings.zen_api_key or "").split(",") if k.strip()]
+_zen_key_iter = itertools.cycle(_zen_keys) if _zen_keys else iter(())
 
 
-def _omni_key() -> str:
-    return next(_omni_key_iter, settings.omniroute_api_key or "")
+def _zen_key() -> str:
+    return next(_zen_key_iter, settings.zen_api_key or "")
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -31,15 +28,14 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (na * nb)
 
 
-async def _get_embedding_via_omniroute(text: str) -> list[float]:
-    """Get embedding via Omniroute using Voyage AI models."""
-    if not settings.omniroute_api_key:
-        raise RuntimeError("Omniroute API key not configured")
+async def _get_embedding_via_zen(text: str) -> list[float]:
+    if not settings.zen_api_key:
+        raise RuntimeError("Zen API key not configured")
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
-            f"{settings.omniroute_base_url}/embeddings",
+            f"{settings.zen_base_url}/embeddings",
             headers={
-                "Authorization": f"Bearer {_omni_key()}",
+                "Authorization": f"Bearer {_zen_key()}",
                 "Content-Type": "application/json",
             },
             json={"model": EMBEDDING_MODEL, "input": text},
@@ -52,7 +48,7 @@ async def _get_embedding_via_omniroute(text: str) -> list[float]:
 async def get_embedding(text: str) -> list[float]:
     if text in _embedding_cache:
         return _embedding_cache[text]
-    emb = await _get_embedding_via_omniroute(text)
+    emb = await _get_embedding_via_zen(text)
     _embedding_cache[text] = emb
     return emb
 
@@ -60,13 +56,13 @@ async def get_embedding(text: str) -> list[float]:
 async def get_embeddings(texts: list[str]) -> list[list[float]]:
     uncached = [t for t in texts if t not in _embedding_cache]
     if uncached:
-        if not settings.omniroute_api_key:
-            raise RuntimeError("Omniroute API key not configured")
+        if not settings.zen_api_key:
+            raise RuntimeError("Zen API key not configured")
         async with httpx.AsyncClient(timeout=60) as client:
             resp = await client.post(
-                f"{settings.omniroute_base_url}/embeddings",
+                f"{settings.zen_base_url}/embeddings",
                 headers={
-                    "Authorization": f"Bearer {_omni_key()}",
+                    "Authorization": f"Bearer {_zen_key()}",
                     "Content-Type": "application/json",
                 },
                 json={"model": EMBEDDING_MODEL, "input": uncached},

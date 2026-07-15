@@ -2,7 +2,8 @@
 
 import { useStore } from "@/store";
 import { clsx } from "clsx";
-import { Bell, Search, TrendingUp, Users } from "lucide-react";
+import { Bell, Search, TrendingUp, Users, Settings } from "lucide-react";
+import { SettingsPanel } from "@/features/settings/SettingsPanel";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
@@ -20,6 +21,8 @@ export function WorkspaceHeader() {
   const agents = useStore((s) => s.agents);
   const setCommandPaletteOpen = useStore((s) => s.setCommandPaletteOpen);
   const setNotificationsOpen = useStore((s) => s.setNotificationsOpen);
+  const setSettingsPanelOpen = useStore((s) => s.setSettingsPanelOpen);
+  const zenConnected = useStore((s) => s.zenConnected);
   const unreadNotifs = useStore((s) => s.notifications.filter((n) => !n.read).length);
 
   // ?tab= is the single source of truth for the active tab
@@ -48,6 +51,13 @@ export function WorkspaceHeader() {
         <span className="text-[10px] text-dark-400 font-medium">
           {connected ? "Live" : "Offline"}
         </span>
+        <span
+          className={clsx(
+            "w-1.5 h-1.5 rounded-full",
+            zenConnected ? "bg-green-500" : "bg-dark-600"
+          )}
+          title={zenConnected ? "Zen API connected" : "Zen API not configured"}
+        />
       </div>
 
       <div className="flex-1" />
@@ -70,6 +80,13 @@ export function WorkspaceHeader() {
       </div>
 
       <button
+        onClick={() => setSettingsPanelOpen(true)}
+        className="text-dark-400 hover:text-dark-200 transition-colors"
+        title="LLM Settings"
+      >
+        <Settings size={16} />
+      </button>
+      <button
         onClick={() => setNotificationsOpen(true)}
         className="text-dark-400 hover:text-dark-200 transition-colors relative"
         title="Notifications"
@@ -89,6 +106,7 @@ export function WorkspaceHeader() {
       >
         <TrendingUp size={16} />
       </Link>
+      <SettingsPanel />
     </header>
   );
 }

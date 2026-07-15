@@ -69,6 +69,11 @@ interface AppState {
   notificationsOpen: boolean;
   activeAgentProfile: string | null;
 
+  // Zen LLM settings
+  settingsPanelOpen: boolean;
+  zenApiKey: string | null;
+  zenConnected: boolean;
+
   // Actions
   setProjects: (p: Project[]) => void;
   setActiveProjectId: (id: string) => void;
@@ -117,6 +122,9 @@ interface AppState {
   setNotificationsOpen: (v: boolean) => void;
   markAllNotificationsRead: () => void;
   setActiveAgentProfile: (id: string | null) => void;
+  setSettingsPanelOpen: (v: boolean) => void;
+  setZenApiKey: (key: string | null) => void;
+  setZenConnected: (v: boolean) => void;
   clearProjectData: () => void;
 }
 
@@ -165,6 +173,9 @@ export const useStore = create<AppState>((set) => ({
   selectedFile: null,
   notificationsOpen: false,
   activeAgentProfile: null,
+  settingsPanelOpen: false,
+  zenApiKey: null,
+  zenConnected: false,
 
   addToolCall: (tc) =>
     set((s) => ({ toolCalls: s.toolCalls.some((x) => x.id === tc.id) ? s.toolCalls.map((x) => x.id === tc.id ? { ...x, ...tc } : x) : [...s.toolCalls, tc] })),
@@ -256,6 +267,9 @@ export const useStore = create<AppState>((set) => ({
   markAllNotificationsRead: () =>
     set((s) => ({ notifications: s.notifications.map((n) => ({ ...n, read: true })) })),
   setActiveAgentProfile: (id) => set({ activeAgentProfile: id }),
+  setSettingsPanelOpen: (v) => set({ settingsPanelOpen: v }),
+  setZenApiKey: (key) => set({ zenApiKey: key }),
+  setZenConnected: (v) => set({ zenConnected: v }),
   clearProjectData: () =>
     set({
       agents: [],

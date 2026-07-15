@@ -15,16 +15,16 @@ services:
         fromDatabase:
           name: ai-collab-db
           property: connectionString
-      - key: OMNIROUTE_API_KEY
+      - key: ZEN_API_KEY
         sync: false
-      - key: OMNIROUTE_BASE_URL
-        value: https://previews-sustained-numerical-programmers.trycloudflare.com/v1
+      - key: ZEN_BASE_URL
+        value: https://opencode.ai/zen/v1
+      - key: ZEN_DEFAULT_MODEL
+        value: deepseek-v4-flash-free
       - key: LLM_DEFAULT_PROVIDER
-        value: omniroute
+        value: zen
       - key: LLM_DEFAULT_MODEL
-        value: groq/llama-3.3-70b-versatile
-      - key: OMNIROUTE_DEFAULT_MODEL
-        value: groq/llama-3.3-70b-versatile
+        value: deepseek-v4-flash-free
       - key: CORS_ORIGINS
         value: '["http://localhost:3000","https://buildanything.vercel.app","https://ai-collab-frontend-omega.vercel.app","https://*.vercel.app"]'
 

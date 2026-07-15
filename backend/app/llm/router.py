@@ -2,7 +2,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 from app.llm.base import LLMProvider, LLMResponse
-from app.llm.providers import OllamaProvider, OmniRouteProvider
+from app.llm.providers import OllamaProvider, ZenProvider
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -14,13 +14,18 @@ class LLMRouter:
         self._register_configured()
 
     def _register_configured(self):
-        if settings.omniroute_api_key:
-            self.register("omniroute", OmniRouteProvider())
+        self.register("zen", ZenProvider())
         self.register("ollama", OllamaProvider())
 
     def register(self, name: str, provider: LLMProvider):
         self._providers[name] = provider
         logger.info("Registered LLM provider: %s", name)
+
+    def update_provider_key(self, provider_name: str, api_key: str):
+        provider = self._providers.get(provider_name)
+        if provider and hasattr(provider, "reconfigure"):
+            provider.reconfigure(api_key)
+            logger.info("Updated API key for provider: %s", provider_name)
 
     def get_provider(self, name: Optional[str] = None) -> LLMProvider:
         name = name or settings.llm_default_provider

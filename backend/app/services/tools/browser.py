@@ -135,13 +135,24 @@ _browser_manager = BrowserManager()
 
 
 async def browse(url: str, timeout: int = 30000) -> dict:
-    if not _ensure_playwright():
-        return {"error": "playwright not installed"}
-    result = await _browser_manager.new_page(url)
-    if result.get("page_id"):
-        info = await _browser_manager.extract_text()
-        return {"title": info.get("title", ""), "content": info.get("text", ""), "url": info.get("url", url)}
-    return result
+    try:
+        from crawl4ai import AsyncWebCrawler
+        async with AsyncWebCrawler() as crawler:
+            result = await crawler.arun(url=url)
+            return {
+                "title": result.metadata.get("title", "") if result.metadata else "",
+                "content": result.markdown or "",
+                "url": result.url or url,
+            }
+    except Exception as e:
+        logger.warning("crawl4ai browse failed (%s), falling back to playwright", e)
+        if not _ensure_playwright():
+            return {"error": "crawl4ai and playwright both unavailable"}
+        result = await _browser_manager.new_page(url)
+        if result.get("page_id"):
+            info = await _browser_manager.extract_text()
+            return {"title": info.get("title", ""), "content": info.get("text", ""), "url": info.get("url", url)}
+        return result
 
 
 async def screenshot(url: str, timeout: int = 30000) -> dict:

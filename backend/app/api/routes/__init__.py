@@ -1,1 +1,1 @@
-from . import messages, projects, agents, tasks, health
+from . import messages, projects, agents, tasks, health, settings

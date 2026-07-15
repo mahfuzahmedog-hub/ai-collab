@@ -15,7 +15,7 @@ async def search(query: str, num_results: int = 5) -> list[dict]:
     except Exception as e1:
         logger.debug("DuckDuckGo Lite failed: %s", e1)
         try:
-            return await _search_html(query, num_results)
+            return await _search_crawl4ai(query, num_results)
         except Exception as e2:
             return [{"error": f"All search backends failed: {e2}"}]
 
@@ -43,21 +43,10 @@ async def _search_lite(query: str, num_results: int) -> list[dict]:
         return _parse_lite(r.text, num_results)
 
 
-async def _search_html(query: str, num_results: int) -> list[dict]:
-    url = f"https://html.duckduckgo.com/html/?q={quote(query)}"
-    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as cl:
-        r = await cl.get(url)
-        r.raise_for_status()
-        results = []
-        for div in re.finditer(r'<div[^>]*class="result[^"]*"[^>]*>(.*?)</div>\s*</div>', r.text, re.DOTALL):
-            link = re.search(r'<a[^>]*href="([^"]*)"[^>]*class="result__a"[^>]*>(.*?)</a>', div.group(1), re.DOTALL)
-            snippet = re.search(r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>', div.group(1), re.DOTALL)
-            if link:
-                results.append({
-                    "title": re.sub(r'<[^>]+>', '', link.group(2)).strip(),
-                    "url": link.group(1),
-                    "snippet": re.sub(r'<[^>]+>', '', snippet.group(1)).strip() if snippet else "",
-                })
-            if len(results) >= num_results:
-                break
-        return results
+async def _search_crawl4ai(query: str, num_results: int) -> list[dict]:
+    url = f"https://lite.duckduckgo.com/lite/?q={quote(query)}"
+    from crawl4ai import AsyncWebCrawler
+    async with AsyncWebCrawler() as crawler:
+        result = await crawler.arun(url=url)
+        html = result.html or ""
+        return _parse_lite(html, num_results)

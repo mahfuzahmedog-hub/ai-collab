@@ -253,6 +253,15 @@ screenshot = ToolDefinition(
     }, ["url"]),
 )
 
+crawl = ToolDefinition(
+    name="crawl",
+    description="Deep-crawl a website starting from a URL, following links up to max_pages pages, returning markdown content for each.",
+    parameters=_O({
+        "url": _S("Starting URL to crawl"),
+        "max_pages": _N("Maximum pages to crawl (default 10)"),
+    }, ["url"]),
+)
+
 run_python = ToolDefinition(
     name="run_python",
     description="Execute Python code and return the output.",
@@ -412,7 +421,7 @@ ALL_TOOLS = [
     create_task, delegate_to_agent_tool,
     write_file, read_file, list_files,
     http_get, http_post, http_put, http_delete,
-    web_search, browse, screenshot,
+    web_search, browse, screenshot, crawl,
     browser_navigate, browser_click, browser_type, browser_scroll,
     browser_extract, browser_list_tabs, browser_switch_tab,
     run_python, run_shell, coding_task_tool,

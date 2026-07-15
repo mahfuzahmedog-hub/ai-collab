@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api.routes import messages, projects, agents, tasks, health
+from app.api.routes import messages, projects, agents, tasks, health, settings
 from app.api.platform import router as aios_router
 from app.api.websocket import ws_router
 from app.websocket.manager import ws_manager
@@ -64,6 +64,7 @@ app.include_router(tasks.router)
 app.include_router(health.router)
 app.include_router(aios_router)
 app.include_router(ws_router, prefix="/api/v1")
+app.include_router(settings.router)
 
 
 @app.get("/api/providers")
