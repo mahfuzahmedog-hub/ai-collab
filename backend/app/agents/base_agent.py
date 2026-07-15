@@ -103,8 +103,11 @@ class BaseAgent:
                     async for chunk in provider.chat_stream_with_tools(
                         messages, temperature=temperature, max_tokens=4096, tools=tools,
                     ):
-                        content += chunk
-                    tool_calls = getattr(provider, "_last_tool_calls", [])
+                        if isinstance(chunk, tuple):
+                            # ponytail: native TC arrives as ("", [ToolCallRequest(...)])
+                            tool_calls.extend(chunk[1])
+                        else:
+                            content += chunk
                     # ponytail: small/free models (e.g. groq/llama-3.1-8b-instant)
                     # can return an empty body when handed a large tool schema.
                     # Fall back to a plain no-tool call so the agent still replies
@@ -143,7 +146,13 @@ class BaseAgent:
                     # isn't rejected by providers that forbid orphan tool roles.
                     retry_messages = [m for m in messages if m.get("role") in ("system", "user")]
                     try:
-                        state["_new_content"] = (await provider.chat(retry_messages, temperature=temperature)) or ""
+                        retry_content = (await provider.chat(retry_messages, temperature=temperature)) or ""
+                        retry_tcs = self._parse_actions_to_tool_calls(retry_content)
+                        if retry_tcs:
+                            retry_content = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', retry_content, flags=re.DOTALL).strip()
+                            state["_tool_calls"] = retry_tcs
+                            state["_has_tool_calls"] = True
+                        state["_new_content"] = retry_content
                     except Exception:
                         state["_new_content"] = f"LLM error: {e}"
 
