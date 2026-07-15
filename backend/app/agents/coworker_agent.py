@@ -208,10 +208,10 @@ Rules:
 
 
 _SYSTEM_ACTIONS = {
-    "create_agent", "evolve_agent", "merge_agents", "split_agent", "retire_agent",
+    "create_agent", "evolve_agent", "evolve_self", "merge_agents", "split_agent", "retire_agent",
     "create_channel", "create_subchannel", "rename_channel", "move_channel", "delete_channel",
     "create_thread", "register_tool", "remove_tool", "create_knowledge_base", "remember_fact",
-    "create_task", "write_file", "read_file", "list_files",
+    "create_task", "write_file", "read_file", "list_files", "reflect",
 }
 
 
@@ -389,6 +389,33 @@ class CoworkerAgent(BaseAgent):
         await event_bus.publish("agent_updated", w.agent.model_dump())
         return f"Agent {w.name} evolved."
 
+    async def _handle_action_reflect(self, action: dict) -> str:
+        from app.memory.manager import memory_manager
+        query = action.get("query", "recent interactions")
+        results = await memory_manager.search(query, project_id=self.project.id, limit=10)
+        if not results:
+            return "No memories to reflect on."
+        lines = [f"- [{m['type']}] {m['content'][:200]}" for m in results]
+        return "Reflections:\n" + "\n".join(lines)
+
+    async def _handle_action_evolve_self(self, action: dict) -> str:
+        updated = False
+        if action.get("skills"):
+            self.agent.skills = list(set(self.agent.skills + action["skills"]))
+            updated = True
+        if action.get("personality"):
+            self.agent.personality = action["personality"]
+            updated = True
+        if action.get("mission"):
+            self.agent.mission = action["mission"]
+            updated = True
+        if updated:
+            from app.db.repository import save_agent
+            asyncio.create_task(save_agent(self.agent))
+            await event_bus.publish("agent_updated", self.agent.model_dump())
+            return f"{self.name} evolved."
+        return "Nothing to update."
+
     async def _handle_action_merge_agents(self, action: dict) -> str:
         keep_id = action.get("keep_id", "")
         absorb_id = action.get("absorb_id", "")
@@ -467,6 +494,26 @@ class CoworkerAgent(BaseAgent):
         }))
         return f"Remembered: {key} = {value}"
 
+    async def _handle_action_update_skill(self, action: dict) -> str:
+        from app.memory.manager import memory_manager
+        skill_id = action.get("skill_id", "") or action.get("id", "")
+        if not skill_id:
+            return "No skill_id provided."
+        existing = await memory_manager.get_skill(skill_id)
+        if not existing:
+            return f"Skill {skill_id} not found."
+        for k in ("name", "description", "prompt_template", "category"):
+            if k in action:
+                existing[k] = action[k]
+        if action.get("trigger_phrases"):
+            existing["trigger_phrases"] = action["trigger_phrases"]
+        existing["version"] = (existing.get("version") or 1) + 1
+        changelog = existing.get("changelog", [])
+        changelog.append({"action": "update", "timestamp": datetime.utcnow().isoformat() + "Z"})
+        existing["changelog"] = changelog
+        await memory_manager.save_skill(existing)
+        return f"Skill {skill_id} updated to v{existing['version']}."
+
     async def _handle_action_create_task(self, action: dict) -> str:
         assign_to = action.get("assign_to", "")
         assigned_role = None
@@ -523,6 +570,8 @@ class CoworkerAgent(BaseAgent):
         "delete_channel": _handle_action_delete_channel,
         "create_thread": _handle_action_create_thread,
         "evolve_agent": _handle_action_evolve_agent,
+        "evolve_self": _handle_action_evolve_self,
+        "reflect": _handle_action_reflect,
         "merge_agents": _handle_action_merge_agents,
         "split_agent": _handle_action_split_agent,
         "retire_agent": _handle_action_retire_agent,
@@ -531,6 +580,7 @@ class CoworkerAgent(BaseAgent):
         "remove_tool": _handle_action_remove_tool,
         "remember": _handle_action_remember,
         "remember_fact": _handle_action_remember,
+        "update_skill": _handle_action_update_skill,
         "create_task": _handle_action_create_task,
         "write_file": _handle_action_write_file,
         "read_file": _handle_action_read_file,
@@ -549,7 +599,8 @@ class CoworkerAgent(BaseAgent):
             return "Approval requested."
         handler = self._ACTION_HANDLERS.get(t)
         if handler:
-            return await handler(self, action, channel)
+            result = await handler(self, action, channel)
+            return result
         if t in ("forget_memory", "search_memories", "create_skill", "search_skills", "list_skills", "delete_skill", "create_knowledge_base"):
             return await self._handle_action_misc(action)
         return f"Unknown action type: {t}"
@@ -620,6 +671,7 @@ Team members: {team_info}
 
 Respond professionally as the Coworker Agent. If the user is asking for work to be done, delegate to the appropriate team member. If they're asking a question, answer it."""
 
+        n_actions = 0
         response = ""
         async for chunk in self.think_with_tools(prompt):
             response += chunk
@@ -629,6 +681,20 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
         elif not instruction_actions:
             await self.send_message(project_id, "Executed requested actions.", channel=channel)
 
+        # ponytail: auto-skill-creation after complex work (Hermes-style closed-loop learning)
+        n_actions = len(self._parse_action_blocks(prompt + response))
+        if n_actions >= 2:
+            asyncio.create_task(self._auto_create_skill(user_message, response))
+
+    async def _auto_create_skill(self, user_msg: str, agent_resp: str):
+        from app.skills.creator import create_skill_from_conversation
+        try:
+            skill_id = await create_skill_from_conversation(user_msg, agent_resp)
+            if skill_id:
+                logger.info("Auto-created skill %s from conversation", skill_id)
+        except Exception as e:
+            logger.warning("Auto-skill creation failed: %s", e)
+
     async def create_team(self, required_roles: list[dict], announce_channel: str = "general"):
         if not self.project:
             return
@@ -636,6 +702,9 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
         for role_info in required_roles:
             role = role_info.get("role", "backend")
             name = role_info.get("name", f"{role.title()}-{len(self.team) + 1}")
+            # ponytail: LLM often emits duplicate [ACTION] create_agent blocks
+            if any(w.agent.name == name for w in self.team.values()):
+                continue
             skills = role_info.get("skills", [role])
             agent_model = Agent(
                 name=name, role=role, project_id=self.project.id,

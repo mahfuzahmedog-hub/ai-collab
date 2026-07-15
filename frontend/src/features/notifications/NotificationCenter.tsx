@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useStore } from "@/store";
 import { sendMarkNotificationRead } from "@/lib/websocket";
@@ -54,6 +54,16 @@ export function NotificationCenter() {
   const setActiveChannel = useStore((s) => s.setActiveChannel);
 
   const [filter, setFilter] = useState<FilterType>("all");
+
+  useEffect(() => {
+    if (notificationsOpen) {
+      const unread = notifications.filter((n) => !n.read);
+      if (unread.length > 0) {
+        unread.forEach((n) => sendMarkNotificationRead(n.id));
+        markAllNotificationsRead();
+      }
+    }
+  }, [notificationsOpen]);
 
   const visible = [...notifications]
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())

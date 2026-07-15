@@ -242,7 +242,7 @@ export const useStore = create<AppState>((set) => ({
   setExecutionLogs: (l) => set({ executionLogs: l }),
   addExecutionLog: (l) => set((s) => ({ executionLogs: [l, ...s.executionLogs].slice(0, 500) })),
   setNotifications: (n) => set({ notifications: n }),
-  addNotification: (n) => set((s) => ({ notifications: [n, ...s.notifications].slice(0, 200) })),
+  addNotification: (n) => set((s) => (s.notifications.some((x) => x.id === n.id) ? {} : { notifications: [n, ...s.notifications].slice(0, 200) })),
   markNotificationRead: (id) =>
     set((s) => ({ notifications: s.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)) })),
   setApprovals: (a) => set({ approvals: a }),
