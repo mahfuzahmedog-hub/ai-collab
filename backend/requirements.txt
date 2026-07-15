@@ -13,7 +13,7 @@ pgvector
 playwright
 Pillow
 
-crawl4ai
+# Optional: pip install crawl4ai for enhanced browse/web_search/crawl tools
 
 PyYAML
 

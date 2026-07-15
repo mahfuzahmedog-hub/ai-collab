@@ -7,18 +7,12 @@ async def crawl(url: str, max_pages: int = 10) -> dict:
     try:
         from crawl4ai import AsyncWebCrawler
         from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
-        from crawl4ai.deep_crawling.strategy import OnPageYielded
-        from crawl4ai.async_crawler_strategy import AsyncPlaywrightCrawlStrategy
 
         pages: list[dict] = []
-        seen = set()
 
-        async def on_page(page: OnPageYielded):
+        async def on_page(page):
             if len(pages) >= max_pages:
                 return
-            if page.url in seen:
-                return
-            seen.add(page.url)
             pages.append({
                 "url": page.url,
                 "title": page.metadata.get("title", "") if page.metadata else "",
