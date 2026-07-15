@@ -42,10 +42,12 @@ export function connect() {
   if (ws?.readyState === WebSocket.OPEN) return;
 
   const pid = getProjectId();
-  const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-  const url = isLocal
-    ? `ws://localhost:8000/ws/${pid}/user`
-    : `wss://ai-collab-backend-j6xe.onrender.com/ws/${pid}/user`;
+  const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || (
+    window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+      ? "ws://localhost:8000"
+      : "wss://ai-collab-backend-j6xe.onrender.com"
+  );
+  const url = `${WS_BASE}/ws/${pid}/user`;
 
   ws = new WebSocket(url);
 
