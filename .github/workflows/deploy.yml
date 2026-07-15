@@ -3,10 +3,28 @@ name: Deploy to Render
 on:
   push:
     branches: [master]
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Render deploy
-        run: curl -s -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          SERVICE_ID="srv-d971m9e8bjmc73b0nmq0"
+          if [ -n "$RENDER_API_KEY" ]; then
+            echo "Triggering deploy via Render API..."
+            curl -s -X POST \
+              -H "Authorization: Bearer $RENDER_API_KEY" \
+              -H "Content-Type: application/json" \
+              "https://api.render.com/v1/services/$SERVICE_ID/deploys"
+          elif [ -n "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "Triggering deploy via Deploy Hook URL..."
+            curl -s -X POST "$RENDER_DEPLOY_HOOK_URL"
+          else
+            echo "::error::No deploy method configured. Set RENDER_API_KEY or RENDER_DEPLOY_HOOK_URL in repo secrets."
+            exit 1
+          fi
