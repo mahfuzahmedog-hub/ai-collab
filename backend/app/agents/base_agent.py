@@ -299,8 +299,8 @@ class BaseAgent:
                 ]
             except Exception:
                 pass
-        from app.agents.context_compressor import compress_history
-        history = compress_history(self.agent.chat_history)
+        # ponytail: inline — was from app.agents.context_compressor import compress_history
+        history = self.agent.chat_history[-20:] if len(self.agent.chat_history) > 20 else self.agent.chat_history
         return [
             {"role": "system", "content": system},
             *history,
@@ -319,13 +319,16 @@ class BaseAgent:
 
     async def _enrich_with_memories(self, prompt: str) -> str:
         from app.memory.manager import memory_manager
-        from app.agents.prompt_builder import build_memories_block
         try:
             memories = await memory_manager.search(prompt, project_id=self.agent.project_id, agent_id=self.id, limit=5)
             if not memories:
                 memories = await memory_manager.recall(self.agent.project_id, agent_id=self.id, limit=20)
             if memories:
-                return "\n" + build_memories_block(memories)
+                # ponytail: inline — was from app.agents.prompt_builder import build_memories_block
+                return "\n" + "\n".join(
+                    f"[{m.get('type', 'memory')}] {m.get('content', '')[:300]}"
+                    for m in memories if m.get('content')
+                )
         except Exception:
             pass
         return ""
@@ -530,12 +533,15 @@ class BaseAgent:
         await self.set_status(AgentStatus.idle)
 
     def _system_prompt(self) -> str:
-        from app.agents.prompt_builder import build_system_prompt
-        return build_system_prompt(
-            name=self.name,
-            role=str(self.agent.role),
-            personality=self.agent.personality,
-            skills=self.agent.skills,
-            project_id=self.agent.project_id,
-            mission=self.agent.mission,
-        )
+        # ponytail: inline — was from app.agents.prompt_builder import build_system_prompt
+        parts = [
+            f"Name: {self.name}",
+            f"Role: {self.agent.role}",
+            f"Personality: {self.agent.personality}",
+        ]
+        if self.agent.skills:
+            parts.append(f"Skills: {', '.join(self.agent.skills)}")
+        if self.agent.mission:
+            parts.append(f"Mission: {self.agent.mission}")
+        parts.append(f"Project: {self.agent.project_id}")
+        return "\n".join(parts)

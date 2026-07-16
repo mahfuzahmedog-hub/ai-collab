@@ -56,9 +56,8 @@ async def list_skills() -> dict:
 
 @router.get("/sessions")
 async def list_sessions(project_id: Optional[str] = Query(None)) -> dict:
-    from app.sessions.manager import session_manager
-    sessions = session_manager.list_by_project(project_id) if project_id else []
-    return {"sessions": [s.__dict__ for s in sessions], "count": len(sessions)}
+    # ponytail: sessions module removed — return empty
+    return {"sessions": [], "count": 0, "note": "sessions module removed"}
 
 
 @router.get("/observability/metrics")
@@ -75,8 +74,8 @@ async def list_integrations() -> dict:
 
 @router.get("/mcp/servers")
 async def list_mcp_servers() -> dict:
-    from app.mcp.registry import mcp_registry
-    return {"servers": mcp_registry.list_servers()}
+    # ponytail: mcp module removed — return empty
+    return {"servers": [], "note": "mcp module removed"}
 
 
 @router.get("/plugins")
