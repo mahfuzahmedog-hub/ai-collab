@@ -35,14 +35,18 @@ Not lazy about: understanding the problem (read it fully and trace the real flow
 
 - GitHub repo: `mahfuzahmedog-hub/ai-collab` (master branch)
 - Backend URL: `https://ai-collab-backend-j6xe.onrender.com`
-- Service ID: `srv-d971m9e8bjmc73b0nmq0` (Render API key: `rnd_K2LONxwOWJ5Sj3Irki4IujzjjoD8`)
+- Service ID: `srv-d971m9e8bjmc73b0nmq0` (Render API key: set as `$env:RENDER_API_KEY`)
 - `render.yaml` at repo root (not `backend/render.yaml`)
-- Auto-deploy is ON (triggers on push to master) but builds have been failing; use manual or API for reliable deploys
+- Auto-deploy is ON (triggers on push to master) — pushes trigger Render webhook automatically
 
 ### Deploy methods (in order of preference):
-1. **Automated via GH Actions** — push to `master` triggers `.github/workflows/deploy.yml`. Needs `RENDER_API_KEY` secret set in GitHub repo settings → Secrets and variables → Actions → Add `RENDER_API_KEY` = the key above. Once set, deploys happen automatically.
-2. **Render API** — `curl -X POST -H "Authorization: Bearer $RENDER_API_KEY" "https://api.render.com/v1/services/srv-d971m9e8bjmc73b0nmq0/deploys"`
+1. **Push to master** — triggers auto-deploy via Render webhook. Fastest path.
+2. **Render API** — `Invoke-RestMethod -Uri "https://api.render.com/v1/services/srv-d971m9e8bjmc73b0nmq0/deploys" -Method Post -Headers @{Authorization="Bearer rnd_K2LONxwOWJ5Sj3Irki4IujzjjoD8"}`
 3. **Render Dashboard** → ai-collab-backend → Manual Deploy → Deploy latest commit
+
+### Frontend (Vercel)
+- **Vercel API key:** stored in GitHub secret `VERCEL_TOKEN`
+- Frontend URL: TBD — check Vercel dashboard
 
 ### Important notes
 - Render free tier cold-starts add ~15-30s latency

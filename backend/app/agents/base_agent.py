@@ -17,8 +17,8 @@ from app.db.repository import save_message, save_execution_log
 from app.tools.registry import tool_registry
 from app.graph.engine import GraphEngine, START, END
 from app.graph.types import Command
-from app.memory.context import ContextManager
-from app.memory.memfs import MemFS
+# ponytail: ContextManager and MemFS were removed; these were optional enrichments.
+# If you re-add them, restore the imports from app.memory.context / app.memory.memfs.
 
 logger = logging.getLogger(__name__)
 
@@ -77,12 +77,8 @@ class BaseAgent:
         self._task: Optional[asyncio.Task] = None
         self._lifecycle = LifecycleEngine(agent)
         self._graph: Optional[GraphEngine] = None
-        self._memfs: Optional[MemFS] = None
-        self._context_mgr: Optional[ContextManager] = None
-
-    def set_memfs(self, memfs: MemFS):
-        self._memfs = memfs
-        self._context_mgr = ContextManager(memfs)
+        self._memfs = None
+        self._context_mgr = None
 
     def _build_agent_graph(self) -> GraphEngine:
         builder = GraphEngine()
