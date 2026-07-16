@@ -37,24 +37,18 @@ class MemoryManager:
     def __init__(self, db_path: str = _DEFAULT_DB_PATH):
         self.db_path = db_path
         self._conn: Optional[aiosqlite.Connection] = None
-        self._memfs: Optional["MemFS"] = None
+        self._memfs = None
 
-    def set_memfs(self, memfs: "MemFS"):
+    def set_memfs(self, memfs):
         self._memfs = memfs
 
     async def save_to_memfs(self, memory: dict) -> Optional[str]:
         if not self._memfs:
             return None
-        from app.memory.blocks import MemoryBlock
-        block = MemoryBlock(
-            id=memory.get("id", f"mem-{uuid.uuid4().hex[:12]}"),
-            name=f"{memory.get('type', 'memory')}-{memory.get('id', '')[:8]}",
-            content=memory.get("content", ""),
-            tags=memory.get("tags", []),
-            metadata={"type": memory.get("type", ""), "source": memory.get("source", "")},
-        )
+        # ponytail: MemoryBlock was in app.memory.blocks (removed).
+        # Fall back to plain dict storage via _memfs.save_block.
         project_id = memory.get("project_id", "default")
-        return await self._memfs.save_block(block, project_id)
+        return await self._memfs.save_block(memory, project_id)
 
     async def _ensure_db(self):
         if self._conn is not None:
