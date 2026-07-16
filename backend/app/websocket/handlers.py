@@ -7,6 +7,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from app.websocket.manager import ws_manager
 from app.core.event_bus import event_bus
 from app.services.agent_manager import agent_manager
+from app.services.activity_feed import activity_feed  # noqa: F401 — ensures activity feed subscriber is registered
 from app.db.repository import load_project_messages, load_project_agents, load_project, save_project, save_message
 from app.models.message import Message
 from app.models.agent import AgentStatus
@@ -206,6 +207,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
     elif command == "add_agent":
         role_name = args.get("role", "engineer")
         name = args.get("name", f"Agent-{len(agent_manager.workers) + 1}")
+        specialization = args.get("specialization", role_name)
         worker = await agent_manager.create_worker(project_id, name, role_name)
         await ws.send_text(json.dumps({
             "type": "agent_added",
@@ -218,9 +220,11 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
         if agent_manager.boss and agent_manager.boss.agent.project_id == project_id:
             role = args.get("role", "backend_engineer")
             name = args.get("name", f"Agent-{len(agent_manager.boss.team) + 1}")
+            specialization = args.get("specialization", role)
             await agent_manager.boss.create_team([{
                 "role": role,
                 "name": name,
+                "specialization": specialization,
                 "skills": args.get("skills", [role]),
                 "personality": args.get("personality", "professional and collaborative"),
                 "display_name": args.get("display_name") or name,
@@ -242,6 +246,8 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             else:
                 await agent_manager.remove_agent(agent_id)
                 await event_bus.publish("agent_removed", {"agent_id": agent_id, "project_id": project_id})
+            if agent_manager.registry:
+                await agent_manager.registry.remove(agent_id)
         except Exception:
             pass
         await ws.send_text(json.dumps({"type": "agent_retired", "agent_id": agent_id}))

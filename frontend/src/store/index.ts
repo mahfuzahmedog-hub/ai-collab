@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Agent, Task, Message, Project, AgentStatus, Channel, FileNode, Thread, ExecutionLog, Notification, Approval, LifecycleAudit, ToolCall, Memory, Skill, UserProfile } from "@/types";
+import type { Agent, Task, Message, Project, AgentStatus, Channel, FileNode, Thread, ExecutionLog, Notification, Approval, LifecycleAudit, ToolCall, Memory, Skill, UserProfile, ActivityEntry } from "@/types";
 
 interface AppState {
   // Project state
@@ -35,6 +35,9 @@ interface AppState {
   // Tool calls
   toolCalls: ToolCall[];
 
+  // Activity feed
+  activityFeed: ActivityEntry[];
+
   // Knowledge
   memories: Memory[];
   skills: Skill[];
@@ -49,6 +52,8 @@ interface AppState {
   // UI state
   activeTab: string;
 
+  addActivityEntry: (e: ActivityEntry) => void;
+  setActivityFeed: (a: ActivityEntry[]) => void;
   addToolCall: (tc: ToolCall) => void;
   updateToolCall: (id: string, data: Partial<ToolCall>) => void;
   setMemories: (m: Memory[]) => void;
@@ -165,6 +170,7 @@ export const useStore = create<AppState>((set) => ({
   streamingChunk: null,
   connected: false,
   activeTab: "workspace",
+  activityFeed: [],
   panelSizes: {},
   leftCollapsed: false,
   rightCollapsed: false,
@@ -177,6 +183,9 @@ export const useStore = create<AppState>((set) => ({
   zenApiKey: null,
   zenConnected: false,
 
+  addActivityEntry: (e) =>
+    set((s) => ({ activityFeed: [...s.activityFeed, e].slice(-500) })),
+  setActivityFeed: (a) => set({ activityFeed: a }),
   addToolCall: (tc) =>
     set((s) => ({ toolCalls: s.toolCalls.some((x) => x.id === tc.id) ? s.toolCalls.map((x) => x.id === tc.id ? { ...x, ...tc } : x) : [...s.toolCalls, tc] })),
   updateToolCall: (id, data) =>
@@ -213,8 +222,22 @@ export const useStore = create<AppState>((set) => ({
   setThreads: (t) => set({ threads: t }),
   addThread: (t) => set((s) => (s.threads.some((x) => x.id === t.id) ? {} : { threads: [...s.threads, t] })),
   setActiveThread: (id) => set({ activeThread: id }),
-  setAgents: (a) => set({ agents: a }),
-  addAgent: (a) => set((s) => ({ agents: [...s.agents, a] })),
+  setAgents: (a) => set((s) => {
+    const seen = new Map<string, typeof a[0]>();
+    for (const agent of [...s.agents, ...a]) {
+      seen.set(agent.id, agent);
+    }
+    return { agents: Array.from(seen.values()) };
+  }),
+  addAgent: (a) => set((s) => {
+    const idx = s.agents.findIndex((x) => x.id === a.id);
+    if (idx >= 0) {
+      const updated = [...s.agents];
+      updated[idx] = { ...updated[idx], ...a };
+      return { agents: updated };
+    }
+    return { agents: [...s.agents, a] };
+  }),
   updateAgent: (id, data) =>
     set((s) => ({ agents: s.agents.map((a) => (a.id === id ? { ...a, ...data } : a)) })),
   updateAgentStatus: (id, status) =>

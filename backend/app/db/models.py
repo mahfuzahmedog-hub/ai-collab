@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Text, DateTime, JSON, Enum, Float, ForeignKey, Integer, Boolean
+from sqlalchemy import Column, String, Text, DateTime, JSON, Enum, Float, ForeignKey, Integer, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.db.session import Base
 
@@ -11,9 +11,14 @@ def gen_id() -> str:
 
 class AgentModel(Base):
     __tablename__ = "agents"
+    __table_args__ = (
+        UniqueConstraint("project_id", "normalized_name", name="uix_agent_project_name"),
+    )
 
     id = Column(String, primary_key=True, default=gen_id)
     name = Column(String(255), nullable=False)
+    normalized_name = Column(String(255), nullable=False, default="")
+    specialization = Column(String(255), default="")
     role = Column(String(50), nullable=False)
     project_id = Column(String, nullable=False)
     personality = Column(String(500), default="professional and helpful")

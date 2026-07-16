@@ -8,6 +8,7 @@ from app.agents.coworker_agent import CoworkerAgent
 from app.agents.worker_agent import WorkerAgent
 from app.core.event_bus import event_bus
 from app.db.repository import save_agent, load_project_agents, load_project_messages, load_project
+from app.services.agent_registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -17,47 +18,56 @@ class AgentManager:
         self.boss: Optional[CoworkerAgent] = None
         self.workers: dict[str, WorkerAgent] = {}
         self.current_project_id: Optional[str] = None
+        self.registry: Optional[AgentRegistry] = None
 
     async def create_coworker(self, project_id: str, name: str = "Coworker") -> CoworkerAgent:
-        agent = Agent(
-            name=name,
-            role="coworker",
-            project_id=project_id,
-            skills=["management", "planning", "coordination", "leadership", "organization"],
-            personality="user's AI coworker, proactive and thoughtful partner",
-            provider=settings.llm_default_provider,
-            model=settings.llm_default_model,
-        )
-        self.boss = CoworkerAgent(agent)
-        # Ensure self.boss.project is set even before initialize_workspace() is
-        # called (e.g. via the lazy restore_boss path), so action execution that
-        # reads self.project.id never crashes on a fresh project.
+        # Initialize registry for this project
+        self.registry = AgentRegistry(project_id)
+        await self.registry.load_from_db()
+
+        # Use registry to find-or-create — only one Coworker per project
+        coworker, is_new = await self.registry.find_or_create({
+            "name": name,
+            "role": "coworker",
+            "specialization": "coworker",
+            "skills": ["management", "planning", "coordination", "leadership", "organization"],
+            "personality": "user's AI coworker, proactive and thoughtful partner",
+            "channel": "general",
+        })
+        if not is_new:
+            logger.info("Coworker agent already exists for project %s, reusing", project_id)
+
+        self.boss = CoworkerAgent(coworker, registry=self.registry)
         proj = await load_project(project_id)
         self.boss.project = proj or Project(id=project_id, title="Untitled Project")
         await self.boss.start()
-        await event_bus.publish("agent_created", agent.model_dump())
-        await save_agent(agent)
-        asyncio.create_task(self._restore_project(project_id))
+        if is_new:
+            await event_bus.publish("agent_created", coworker.model_dump())
         self.current_project_id = project_id
+        if is_new:
+            asyncio.create_task(self._restore_project(project_id))
         return self.boss
 
     async def restore_boss(self, project_id: str):
         """Load the coworker agent from DB and restore it in memory."""
         try:
-            workers = await load_project_agents(project_id)
+            # Initialize registry and load from DB
+            self.registry = AgentRegistry(project_id)
+            await self.registry.load_from_db()
+
+            agents = await load_project_agents(project_id)
             proj = await load_project(project_id)
-            for a in workers:
+            for a in agents:
                 if a.role in ("coworker", "boss"):
-                    # Normalize legacy "Boss" leads to the Coworker identity (Option A)
                     if a.role == "boss" or a.name == "Boss":
                         a.role = "coworker"
                         if a.name == "Boss":
                             a.name = "Coworker"
                         asyncio.create_task(save_agent(a))
-                    self.boss = CoworkerAgent(a)
+                    self.boss = CoworkerAgent(a, registry=self.registry)
                     self.boss.project = proj
                     await self.boss.start()
-                    for w in workers:
+                    for w in agents:
                         if w.id != a.id:
                             worker = WorkerAgent(w)
                             self.boss.team[w.id] = worker
@@ -83,17 +93,13 @@ class AgentManager:
             logger.warning("restore_workspace channels failed: %s", e)
 
     async def switch_project(self, project_id: str):
-        # Save current project state
         if self.boss and self.current_project_id:
-            # Current project agents will be saved via their individual save calls
             pass
-        
-        # Clear current workers
+
         for worker in self.workers.values():
             await worker.stop()
         self.workers.clear()
-        
-        # Load new project
+
         self.current_project_id = project_id
         await self._restore_project(project_id)
         if self.boss:
@@ -103,8 +109,8 @@ class AgentManager:
 
     async def _restore_project(self, project_id: str):
         try:
-            workers = await load_project_agents(project_id)
-            for a in workers:
+            agents = await load_project_agents(project_id)
+            for a in agents:
                 if a.role in ("coworker", "boss"):
                     if self.boss:
                         self.boss.agent.chat_history = a.chat_history
@@ -123,18 +129,19 @@ class AgentManager:
             logger.warning("Project restore skipped: %s", e)
 
     async def create_worker(self, project_id: str, name: str, role: str, skills: Optional[list[str]] = None) -> WorkerAgent:
-        agent = Agent(
-            name=name,
-            role=role,
-            project_id=project_id,
-            skills=skills or [role],
-            provider=settings.llm_default_provider,
-            model=settings.llm_default_model,
-        )
+        if not self.registry:
+            self.registry = AgentRegistry(project_id)
+            await self.registry.load_from_db()
+        agent, is_new = await self.registry.find_or_create({
+            "name": name,
+            "role": role,
+            "skills": skills or [role],
+            "channel": "general",
+        })
         worker = WorkerAgent(agent)
         self.workers[agent.id] = worker
-        await event_bus.publish("agent_created", agent.model_dump())
-        await save_agent(agent)
+        if is_new:
+            await event_bus.publish("agent_created", agent.model_dump())
         return worker
 
     async def get_agent(self, agent_id: str):
@@ -146,6 +153,8 @@ class AgentManager:
         if agent_id in self.workers:
             await self.workers[agent_id].stop()
             del self.workers[agent_id]
+            if self.registry:
+                await self.registry.remove(agent_id)
             await event_bus.publish("agent_removed", {"agent_id": agent_id})
 
     def list_agents(self, project_id: Optional[str] = None) -> list[dict]:

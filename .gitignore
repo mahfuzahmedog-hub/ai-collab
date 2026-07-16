@@ -26,3 +26,4 @@ backend/data/
 backend/**/*.db
 backend/loc_*.log
 backend/loc_*.log
+.env*

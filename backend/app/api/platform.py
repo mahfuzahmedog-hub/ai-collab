@@ -32,13 +32,11 @@ async def get_agent(agent_id: str) -> dict:
 
 @router.get("/projects/{project_id}/workflows")
 async def list_workflows(project_id: str) -> dict:
-    from app.workflow.engine import workflow_engine
     return {"workflows": [], "count": 0}
 
 
 @router.post("/workflows/{workflow_id}/execute")
 async def execute_workflow(workflow_id: str, payload: dict) -> dict:
-    from app.workflow.engine import workflow_engine
     return {"workflow_id": workflow_id, "status": "accepted", "context": {}}
 
 

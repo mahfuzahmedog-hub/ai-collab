@@ -235,12 +235,13 @@ _SYSTEM_ACTIONS = {
 
 
 class CoworkerAgent(BaseAgent):
-    def __init__(self, agent: Agent):
+    def __init__(self, agent: Agent, registry=None):
         super().__init__(agent)
         self.team: dict[str, WorkerAgent] = {}
         self.project: Optional[Project] = None
         self.tasks: dict[str, Task] = {}
         self._event_handlers = []
+        self.registry = registry
 
     def _build_agent_graph(self) -> GraphEngine:
         builder = super()._build_agent_graph()
@@ -331,8 +332,13 @@ class CoworkerAgent(BaseAgent):
 
     async def _handle_action_create_agent(self, action: dict, channel: str) -> str:
         name = (action.get("name") or "").strip()
-        if name and any(w.agent.name.lower() == name.lower() for w in self.team.values()):
-            return f"Agent '{name}' already exists, skipping."
+        if not name:
+            return "Agent name is required."
+        # Check registry before delegating to create_team (the registry is the source of truth)
+        if self.registry:
+            existing = await self.registry.find_by_normalized_name(name)
+            if existing:
+                return f"Agent '{name}' already exists (registry), skipping."
         await self.create_team([{
             "role": action.get("role", "backend_engineer"),
             "name": action.get("name"),
@@ -341,6 +347,7 @@ class CoworkerAgent(BaseAgent):
             "display_name": action.get("display_name"),
             "mission": action.get("mission"),
             "channel": action.get("channel"),
+            "specialization": action.get("specialization", action.get("role", "")),
         }], announce_channel=channel)
         return f"Agent {action.get('name')} created."
 
@@ -477,18 +484,25 @@ class CoworkerAgent(BaseAgent):
             return "Split failed."
         source = self.team[source_id]
         new_name = action.get("new_name", "Split-Agent")
+        new_role = action.get("new_role", "specialist")
         new_skills = action.get("skills", source.agent.skills[-1:])
-        new_agent = Agent(
-            name=new_name, role=action.get("new_role", "specialist"),
-            project_id=self.project.id, skills=new_skills,
-            personality=source.agent.personality, channel=source.agent.channel,
-            provider=source.agent.provider,
-        )
-        new_worker = WorkerAgent(new_agent)
-        self.team[new_agent.id] = new_worker
-        self.project.agent_ids.append(new_agent.id)
-        asyncio.create_task(save_agent(new_agent))
-        await event_bus.publish("agent_created", new_agent.model_dump())
+
+        agent_model, is_new = await self.registry.find_or_create({
+            "name": new_name,
+            "role": new_role,
+            "specialization": new_role,
+            "skills": new_skills,
+            "personality": source.agent.personality,
+            "channel": source.agent.channel,
+        })
+        if not is_new:
+            return f"Agent '{new_name}' already exists via registry, skipping split."
+
+        new_worker = WorkerAgent(agent_model)
+        self.team[agent_model.id] = new_worker
+        if self.project:
+            self.project.agent_ids.append(agent_model.id)
+        await event_bus.publish("agent_created", agent_model.model_dump())
         return f"Agent {new_name} split from {source.name}."
 
     async def _handle_action_retire_agent(self, action: dict) -> str:
@@ -747,24 +761,34 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
         for role_info in required_roles:
             role = role_info.get("role", "backend")
             name = role_info.get("name", f"{role.title()}-{len(self.team) + 1}")
-            # ponytail: LLM often emits duplicate [ACTION] create_agent blocks
-            if any(w.agent.name.lower() == name.lower() for w in self.team.values()):
-                continue
             skills = role_info.get("skills", [role])
-            agent_model = Agent(
-                name=name, role=role, project_id=self.project.id,
-                skills=skills, personality=role_info.get("personality", "professional and collaborative"),
-                display_name=role_info.get("display_name") or name,
-                mission=role_info.get("mission"),
-                channel=role_info.get("channel") or "general",
-                provider=settings.llm_default_provider,
-            )
+            specialization = role_info.get("specialization", role)
+
+            # Use registry for atomic find-or-create (handles dedup, DB constraint, concurrency)
+            agent_model, is_new = await self.registry.find_or_create({
+                "name": name,
+                "role": role,
+                "specialization": specialization,
+                "skills": skills,
+                "personality": role_info.get("personality", "professional and collaborative"),
+                "display_name": role_info.get("display_name") or name,
+                "mission": role_info.get("mission"),
+                "channel": role_info.get("channel") or "general",
+            })
+
+            if agent_model.id in self.team:
+                continue
+
             worker = WorkerAgent(agent_model)
             await worker.set_status(AgentStatus.initializing, "Agent created")
             await worker.set_status(AgentStatus.idle, "Agent initialized")
             self.team[agent_model.id] = worker
-            self.project.agent_ids.append(agent_model.id)
-            asyncio.create_task(save_agent(agent_model))
+            if self.project:
+                self.project.agent_ids.append(agent_model.id)
+            if self.registry:
+                pass  # registry already persisted
+            else:
+                asyncio.create_task(save_agent(agent_model))
             await event_bus.publish("agent_created", agent_model.model_dump())
             greeting_channel = agent_model.channel or "general"
             await worker.send_message(self.project.id, f"Hello team! I'm {name}, your {role}. Ready to contribute!", channel=greeting_channel)
@@ -772,7 +796,8 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
         await self.send_message(self.project.id, f"Team created with {len(self.team)} members. Let's start working!", msg_type="system", channel=announce_channel)
 
     async def create_task(self, title: str, description: str = "", priority: TaskPriority = TaskPriority.medium, assigned_role: Optional[str] = None) -> Task:
-        task = Task(
+        from app.services.task_manager import create_task as _tm_create
+        task = await _tm_create(
             project_id=self.project.id, title=title,
             description=description, priority=priority, assigned_by=self.id,
         )
@@ -781,14 +806,8 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
         if assigned_role:
             for agent_id, worker in self.team.items():
                 if worker.agent.role == assigned_role or assigned_role in worker.agent.skills:
-                    task.assigned_to = agent_id
-                    task.status = TaskStatus.assigned
-                    worker.assign_task(task)
-                    await self.send_message(self.project.id, f" {worker.name}: I'm assigning you '{task.title}'.\n{description}", mentions=[worker.name], channel=worker.agent.channel)
-                    asyncio.create_task(worker.work_on_task())
+                    await self._assign_and_start(worker, task, description)
                     break
-        await event_bus.publish("task_created", task.model_dump())
-        asyncio.create_task(save_task(task))
         if assigned_role and self.team:
             from app.db.repository import save_notification
             from app.models.ops import Notification
@@ -799,6 +818,14 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
                     await event_bus.publish("notification", n.model_dump())
                     break
         return task
+
+    async def _assign_and_start(self, worker, task, description):
+        from app.services.task_manager import transition_task
+        task.assigned_to = worker.id
+        await transition_task(task, TaskStatus.assigned)
+        worker.assign_task(task)
+        await self.send_message(self.project.id, f" {worker.name}: I'm assigning you '{task.title}'.\n{description}", mentions=[worker.name], channel=worker.agent.channel)
+        asyncio.create_task(worker.work_on_task())
 
     async def assign_task_to_agent(self, task_id: str, agent_id: str):
         task = self.tasks.get(task_id)

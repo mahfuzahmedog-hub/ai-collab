@@ -233,6 +233,13 @@ export interface UserProfile {
   last_updated: string;
 }
 
+export interface ActivityEntry {
+  type: string;
+  summary: string;
+  timestamp: string;
+  data: Record<string, any>;
+}
+
 export interface WSMessage {
   type: string;
   [key: string]: any;

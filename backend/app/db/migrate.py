@@ -36,7 +36,30 @@ async def run_migration():
         else:
             await conn.run_sync(_add_postgres_columns)
 
+    async with engine.begin() as conn:
+        await conn.run_sync(_ensure_registry_columns_and_index)
+
     logger.info("Migration complete")
+
+
+def _ensure_registry_columns_and_index(connection):
+    inspector = inspect(connection)
+    agent_cols = [c["name"] for c in inspector.get_columns("agents")]
+
+    if "normalized_name" not in agent_cols:
+        connection.execute(text("ALTER TABLE agents ADD COLUMN normalized_name VARCHAR(255) DEFAULT ''"))
+        connection.execute(text("UPDATE agents SET normalized_name = LOWER(TRIM(name)) WHERE normalized_name IS NULL OR normalized_name = ''"))
+        logger.info("Added column agents.normalized_name and backfilled")
+    if "specialization" not in agent_cols:
+        connection.execute(text("ALTER TABLE agents ADD COLUMN specialization VARCHAR(255) DEFAULT ''"))
+        logger.info("Added column agents.specialization")
+
+    # Create unique index (skip if already exists — SQLite handles this gracefully)
+    try:
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uix_agent_project_name ON agents(project_id, normalized_name)"))
+        logger.info("Created unique index uix_agent_project_name")
+    except Exception as e:
+        logger.warning("Could not create unique index (may already exist): %s", e)
 
 
 def _add_sqlite_columns(connection):

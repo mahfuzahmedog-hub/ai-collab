@@ -38,6 +38,11 @@ async def lifespan(app: FastAPI):
         await run_migration()
     except Exception as e:
         logger.warning("Migration skipped: %s", e)
+    try:
+        from app.services.dedup import deduplicate_all_projects
+        await deduplicate_all_projects()
+    except Exception as e:
+        logger.warning("Startup dedup skipped: %s", e)
     yield
     logger.info("Shutting down...")
     await agent_manager.stop_all()

@@ -1,4 +1,4 @@
-import type { Agent, Task, Message, Project, Channel, FileNode, Thread, ExecutionLog, Notification, Approval, LifecycleAudit, AgentStatus, ToolCall, Memory, Skill, UserProfile } from "@/types";
+import type { Agent, Task, Message, Project, Channel, FileNode, Thread, ExecutionLog, Notification, Approval, LifecycleAudit, AgentStatus, ToolCall, Memory, Skill, UserProfile, ActivityEntry } from "@/types";
 import { useStore } from "@/store";
 
 let ws: WebSocket | null = null;
@@ -374,6 +374,10 @@ function handleMessage(data: any) {
 
     case "user_profile":
       if (data.profile) store.setUserProfile(data.profile as UserProfile);
+      break;
+
+    case "activity":
+      if (data.entry) store.addActivityEntry(data.entry as ActivityEntry);
       break;
 
     case "pong":

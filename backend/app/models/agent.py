@@ -1,11 +1,16 @@
 import enum
+import re
 import uuid
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 def utcnow_str() -> str:
     return datetime.utcnow().isoformat() + "Z"
+
+
+def normalize_name(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", (name or "").strip().lower()).strip("-")
 
 
 class AgentStatus(str, enum.Enum):
@@ -49,6 +54,8 @@ PRESENCE_MAP = {
 class Agent(BaseModel):
     id: str = Field(default_factory=lambda: f"agent-{uuid.uuid4().hex[:8]}")
     name: str
+    normalized_name: str = ""
+    specialization: str = ""
     role: str
     personality: str = "professional and helpful"
     display_name: str | None = None
@@ -76,5 +83,11 @@ class Agent(BaseModel):
     provider: str = "openai"
     model: str = "gpt-4o-mini"
     temperature: float = 0.7
+
+    @model_validator(mode="after")
+    def _derive_normalized_name(self):
+        if not self.normalized_name and self.name:
+            self.normalized_name = normalize_name(self.name)
+        return self
 
 

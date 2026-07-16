@@ -3,8 +3,9 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from app.db.models import (
     AgentModel, MessageModel, TaskModel, ProjectModel, FileModel, ChannelModel,
@@ -12,7 +13,7 @@ from app.db.models import (
     ApprovalModel, MemoryModel, LifecycleAuditModel,
 )
 from app.db.session import async_session
-from app.models.agent import Agent, AgentStatus
+from app.models.agent import Agent, AgentStatus, normalize_name
 from app.models.task import Task, TaskStatus, TaskPriority
 from app.models.message import Message
 from app.models.project import Project
@@ -23,14 +24,46 @@ from app.models.ops import ExecutionLog, Notification, Approval, Memory
 logger = logging.getLogger(__name__)
 
 
+def _agent_from_row(row) -> Agent:
+    return Agent(
+        id=row.id,
+        name=row.name,
+        normalized_name=row.normalized_name or "",
+        specialization=row.specialization or "",
+        role=row.role,
+        project_id=row.project_id,
+        personality=row.personality,
+        display_name=row.display_name,
+        mission=row.mission,
+        reporting_structure=row.reporting_structure,
+        version=row.version or "1.0",
+        is_permanent=row.is_permanent or False,
+        channel=getattr(row, "channel", None) or "general",
+        emoji=getattr(row, "emoji", None) or "",
+        color=getattr(row, "color", None) or "",
+        max_tokens=getattr(row, "max_tokens", None) or 4096,
+        status=AgentStatus(row.status),
+        current_task_id=row.current_task_id,
+        skills=row.skills or [],
+        provider=row.provider,
+        model=row.model,
+        temperature=row.temperature,
+        memory=row.memory or {},
+        chat_history=row.chat_history or [],
+    )
+
+
 async def save_agent(agent: Agent):
     async with async_session() as session:
         stmt = select(AgentModel).where(AgentModel.id == agent.id)
         result = await session.execute(stmt)
         existing = result.scalar_one_or_none()
         now = datetime.utcnow()
+        normalized = agent.normalized_name or normalize_name(agent.name)
         data = {
             "name": agent.name,
+            "normalized_name": normalized,
+            "specialization": agent.specialization or "",
             "role": agent.role,
             "project_id": agent.project_id,
             "personality": agent.personality,
@@ -67,30 +100,7 @@ async def load_agent(agent_id: str) -> Optional[Agent]:
         row = result.scalar_one_or_none()
         if not row:
             return None
-        return Agent(
-            id=row.id,
-            name=row.name,
-            role=row.role,
-            project_id=row.project_id,
-            personality=row.personality,
-            display_name=row.display_name,
-            mission=row.mission,
-            reporting_structure=row.reporting_structure,
-            version=row.version or "1.0",
-            is_permanent=row.is_permanent or False,
-            channel=getattr(row, "channel", None) or "general",
-            emoji=getattr(row, "emoji", None) or "",
-            color=getattr(row, "color", None) or "",
-            max_tokens=getattr(row, "max_tokens", None) or 4096,
-            status=AgentStatus(row.status),
-            current_task_id=row.current_task_id,
-            skills=row.skills or [],
-            provider=row.provider,
-            model=row.model,
-            temperature=row.temperature,
-            memory=row.memory or {},
-            chat_history=row.chat_history or [],
-        )
+        return _agent_from_row(row)
 
 
 async def load_project_agents(project_id: str) -> list[Agent]:
@@ -98,33 +108,126 @@ async def load_project_agents(project_id: str) -> list[Agent]:
         result = await s.execute(
             select(AgentModel).where(AgentModel.project_id == project_id)
         )
-        agents = []
-        for row in result.scalars().all():
-            agents.append(Agent(
-                id=row.id,
-                name=row.name,
-                role=row.role,
-                project_id=row.project_id,
-                personality=row.personality,
-                display_name=row.display_name,
-                mission=row.mission,
-                reporting_structure=row.reporting_structure,
-                version=row.version or "1.0",
-                is_permanent=row.is_permanent or False,
-                channel=getattr(row, "channel", None) or "general",
-                emoji=getattr(row, "emoji", None) or "",
-                color=getattr(row, "color", None) or "",
-                max_tokens=getattr(row, "max_tokens", None) or 4096,
-                status=AgentStatus(row.status),
-                current_task_id=row.current_task_id,
-                skills=row.skills or [],
-                provider=row.provider,
-                model=row.model,
-                temperature=row.temperature,
-                memory=row.memory or {},
-                chat_history=row.chat_history or [],
-            ))
-        return agents
+        return [_agent_from_row(row) for row in result.scalars().all()]
+
+
+async def find_existing_agent(project_id: str, *, normalized_name: str = "", role: str = "", specialization: str = "") -> Optional[Agent]:
+    """Look up an existing agent by (project_id, normalized_name) or (project_id, role, specialization)."""
+    async with async_session() as s:
+        if normalized_name:
+            stmt = select(AgentModel).where(
+                AgentModel.project_id == project_id,
+                AgentModel.normalized_name == normalized_name,
+            )
+            result = await s.execute(stmt)
+            row = result.scalar_one_or_none()
+            if row:
+                return _agent_from_row(row)
+        if role and specialization:
+            stmt = select(AgentModel).where(
+                AgentModel.project_id == project_id,
+                AgentModel.role == role,
+                AgentModel.specialization == specialization,
+            )
+            result = await s.execute(stmt)
+            row = result.scalar_one_or_none()
+            if row:
+                return _agent_from_row(row)
+    return None
+
+
+async def get_or_create_agent(project_id: str, agent: Agent) -> tuple[Agent, bool]:
+    """Atomic find-or-create. Returns (agent, is_new)."""
+    existing = await find_existing_agent(
+        project_id,
+        normalized_name=agent.normalized_name,
+        role=agent.role,
+        specialization=agent.specialization,
+    )
+    if existing:
+        return existing, False
+    try:
+        await save_agent(agent)
+        return agent, True
+    except IntegrityError:
+        # Race lost — another task inserted first. Return what's there.
+        existing = await find_existing_agent(
+            project_id,
+            normalized_name=agent.normalized_name,
+            role=agent.role,
+            specialization=agent.specialization,
+        )
+        return existing or agent, False
+
+
+async def delete_agent(agent_id: str):
+    async with async_session() as s:
+        await s.execute(delete(AgentModel).where(AgentModel.id == agent_id))
+        await s.commit()
+
+
+async def merge_agents(survivor_id: str, duplicate_id: str, project_id: str):
+    """Merge duplicate's data into survivor, then delete the duplicate."""
+    survivor = await load_agent(survivor_id)
+    duplicate = await load_agent(duplicate_id)
+    if not survivor or not duplicate:
+        return
+
+    # Merge chat history
+    existing_ids = {m.get("id", "") for m in (survivor.chat_history or [])}
+    for m in (duplicate.chat_history or []):
+        if m.get("id", "") not in existing_ids:
+            survivor.chat_history.append(m)
+
+    # Merge memory
+    sm = survivor.memory or {}
+    dm = duplicate.memory or {}
+    for key in ("short_term", "long_term", "conversation_history", "completed_tasks"):
+        sv = sm.get(key, [] if isinstance(dm.get(key), list) else {})
+        dv = dm.get(key, [])
+        if isinstance(sv, list) and isinstance(dv, list):
+            existing = {json.dumps(i) if isinstance(i, dict) else str(i) for i in sv}
+            for item in dv:
+                key_repr = json.dumps(item) if isinstance(item, dict) else str(item)
+                if key_repr not in existing:
+                    sv.append(item)
+            sm[key] = sv
+
+    # Merge skills
+    survivor.skills = list(set((survivor.skills or []) + (duplicate.skills or [])))
+
+    survivor.memory = sm
+    await save_agent(survivor)
+
+    # Reassign messages/tasks/memories from duplicate to survivor
+    async with async_session() as s:
+        await s.execute(
+            MessageModel.__table__.update().where(
+                MessageModel.sender_id == duplicate_id,
+                MessageModel.project_id == project_id,
+            ).values(sender_id=survivor_id, sender_name=survivor.name)
+        )
+        await s.execute(
+            TaskModel.__table__.update().where(
+                TaskModel.assigned_to == duplicate_id,
+            ).values(assigned_to=survivor_id)
+        )
+        await s.execute(
+            MemoryModel.__table__.update().where(
+                MemoryModel.agent_id == duplicate_id,
+                MemoryModel.project_id == project_id,
+            ).values(agent_id=survivor_id)
+        )
+        await s.execute(
+            ExecutionLogModel.__table__.update().where(
+                ExecutionLogModel.agent_id == duplicate_id,
+                ExecutionLogModel.project_id == project_id,
+            ).values(agent_id=survivor_id, agent_name=survivor.name)
+        )
+        await s.commit()
+
+    await delete_agent(duplicate_id)
+    logger.info("Merged agent %s into %s (project %s)", duplicate_id, survivor_id, project_id)
 
 
 async def save_message(msg: Message):
