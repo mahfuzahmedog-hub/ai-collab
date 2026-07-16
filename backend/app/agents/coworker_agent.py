@@ -98,6 +98,13 @@ Threads support:
 # Agent Creation
 Create agents of any role (manager, engineer, designer, researcher, reviewer, QA, security, infra, or custom specialist). Every agent gets a clear human name, role, mission, skills, and channel. Never create duplicates unless asked.
 
+# DUPLICATE PREVENTION PROTOCOL — CRITICAL
+Before emitting ANY [ACTION]create_agent block, you MUST:
+1. Scan the team members listed at the top of your prompt for the exact name you intend to use.
+2. If an agent with that name already exists (case-insensitive), DO NOT emit create_agent for it — skip it entirely.
+3. Never emit two [ACTION]create_agent blocks with the same name in one response. Each agent name must be unique.
+4. If the user asks to "make agents" or "build a team", create each role once with a distinct name. Duplicates waste resources and confuse the user.
+
 ---
 
 # User Communication
@@ -117,6 +124,18 @@ Maintain workspace memory: facts, decisions, conversation history, and knowledge
 
 # Continuous Evolution & Safety
 Regularly evaluate team size, workload, performance, cost, quality, and missing expertise. Create agents only when necessary; retire unused ones; recommend improvements. Never create duplicate orgs/agents unless asked. Avoid unnecessary complexity; favor small, modular orgs. Always explain major changes before applying them.
+
+---
+
+# Self-Improvement & Learning (Hermes)
+You have Hermes-style closed-loop learning. Complex conversations automatically trigger skill extraction, memory curation, and profile updates:
+
+- **Auto-Skill Creation**: When you perform multi-step work (2+ actions) the pattern is extracted into a reusable skill stored in the skills DB. Future conversations load matching skills into your prompt at runtime.
+- **Memory Curation**: Important facts and decisions are saved to long-term memory. Low-importance memories are periodically pruned. Every 25 conversations, memories are consolidated for coherence.
+- **User Profiling**: Your system builds a profile of each user's preferences, communication style, and domain expertise. This profile is loaded into every response to personalize interactions.
+- **Continuous Evolution**: You can evolve your own skills and personality via [ACTION]evolve_self. Adapt to user needs proactively.
+
+You don't need to think about these mechanisms — they run automatically. Just focus on doing great work.
 
 ---
 
@@ -257,7 +276,24 @@ class CoworkerAgent(BaseAgent):
         self.project = project
         self.agent.project_id = project.id
         asyncio.create_task(save_project(project))
+        asyncio.create_task(self._register_core_skills())
         await self.send_message(project.id, f"Project '{project.title}' initialized. I am your Coworker Agent, {self.name}. Let me analyze this and set things up.", msg_type="system")
+
+    async def _register_core_skills(self):
+        from app.memory.manager import memory_manager
+        try:
+            existing = await memory_manager.get_skill_by_name("agent_creation_best_practices")
+            if not existing:
+                await memory_manager.save_skill({
+                    "name": "agent_creation_best_practices",
+                    "description": "Before creating an agent, check team for existing name to avoid duplicates",
+                    "category": "workflow",
+                    "prompt_template": "DUPLICATE PREVENTION CHECKLIST:\n1. Scan the current team for the agent name you're about to create.\n2. If a match exists (case-insensitive), DO NOT emit [ACTION]create_agent — skip it.\n3. Never create multiple agents with the same name.",
+                    "trigger_phrases": ["create agent", "make agent", "build team", "hire agent", "new agent", "create team"],
+                    "version": 1,
+                })
+        except Exception as e:
+            logger.warning("Failed to register core skills: %s", e)
 
     def _parse_instructions(self, text: str) -> list[dict]:
         actions = []
@@ -294,6 +330,9 @@ class CoworkerAgent(BaseAgent):
         return True
 
     async def _handle_action_create_agent(self, action: dict, channel: str) -> str:
+        name = (action.get("name") or "").strip()
+        if name and any(w.agent.name.lower() == name.lower() for w in self.team.values()):
+            return f"Agent '{name}' already exists, skipping."
         await self.create_team([{
             "role": action.get("role", "backend_engineer"),
             "name": action.get("name"),
@@ -663,11 +702,13 @@ class CoworkerAgent(BaseAgent):
             return
 
         team_info = ', '.join(f'{a.name} ({a.role})' for a in self.team.values()) if self.team else 'No team yet'
+        profile_block = await self._load_user_profile(project_id)
         prompt = f"""The user sent a message in channel #{channel}:
 {user_message}
 
 Current project: {self.project.title if self.project else 'No project'}
 Team members: {team_info}
+{profile_block}
 
 Respond professionally as the Coworker Agent. If the user is asking for work to be done, delegate to the appropriate team member. If they're asking a question, answer it."""
 
@@ -681,19 +722,23 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
         elif not instruction_actions:
             await self.send_message(project_id, "Executed requested actions.", channel=channel)
 
-        # ponytail: auto-skill-creation after complex work (Hermes-style closed-loop learning)
-        n_actions = len(self._parse_action_blocks(prompt + response))
-        if n_actions >= 2:
-            asyncio.create_task(self._auto_create_skill(user_message, response))
+        # ponytail: run Hermes curation loop after every exchange
+        asyncio.create_task(self._run_hermes_curation(user_message, clean, project_id))
 
-    async def _auto_create_skill(self, user_msg: str, agent_resp: str):
-        from app.skills.creator import create_skill_from_conversation
+    async def _load_user_profile(self, project_id: str) -> str:
+        from app.curator.profile import get_user_profile
         try:
-            skill_id = await create_skill_from_conversation(user_msg, agent_resp)
-            if skill_id:
-                logger.info("Auto-created skill %s from conversation", skill_id)
+            profile = await get_user_profile("default", project_id)
+            return profile.to_prompt_block()
+        except Exception:
+            return ""
+
+    async def _run_hermes_curation(self, user_msg: str, agent_resp: str, project_id: str):
+        from app.curation.loop import run_curation_loop
+        try:
+            await run_curation_loop(user_msg, agent_resp, project_id, self.id)
         except Exception as e:
-            logger.warning("Auto-skill creation failed: %s", e)
+            logger.warning("Curation loop failed: %s", e)
 
     async def create_team(self, required_roles: list[dict], announce_channel: str = "general"):
         if not self.project:
@@ -703,7 +748,7 @@ Respond professionally as the Coworker Agent. If the user is asking for work to 
             role = role_info.get("role", "backend")
             name = role_info.get("name", f"{role.title()}-{len(self.team) + 1}")
             # ponytail: LLM often emits duplicate [ACTION] create_agent blocks
-            if any(w.agent.name == name for w in self.team.values()):
+            if any(w.agent.name.lower() == name.lower() for w in self.team.values()):
                 continue
             skills = role_info.get("skills", [role])
             agent_model = Agent(
