@@ -544,6 +544,18 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
                 task.status = "assigned"
             await save_task(task)
             await ws_manager.broadcast(project_id, {"type": "task_created", **task.model_dump()})
+            # Trigger agent to work on the task if assigned
+            if args.get("assigned_to") and agent_manager.boss:
+                from app.services.task_manager import transition_task
+                target = None
+                for wid, w in agent_manager.boss.team.items():
+                    if w.id == args["assigned_to"] or w.name.lower() == args["assigned_to"].lower():
+                        target = w
+                        break
+                if target:
+                    target.assign_task(task)
+                    await transition_task(task, TaskStatus.assigned)
+                    asyncio.create_task(target.work_on_task())
 
     elif command == "update_task":
         from app.db.repository import update_task_fields
@@ -556,6 +568,17 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             updated = await update_task_fields(project_id, task_id, **fields)
             if updated:
                 await ws_manager.broadcast(project_id, {"type": "task_updated", "id": updated.id, **updated.model_dump()})
+                # Trigger agent work when dragged to assigned/working
+                new_status = fields.get("status", "")
+                if new_status in ("assigned", "working") and agent_manager.boss:
+                    target = None
+                    for wid, w in agent_manager.boss.team.items():
+                        if w.id == updated.assigned_to:
+                            target = w
+                            break
+                    if target and not target.current_task:
+                        target.assign_task(updated)
+                        asyncio.create_task(target.work_on_task())
 
     elif command in ("pause_agent", "resume_agent"):
         from app.models.agent import AgentStatus

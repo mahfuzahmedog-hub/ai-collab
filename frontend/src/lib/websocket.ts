@@ -180,6 +180,10 @@ export function sendWriteFile(path: string, content: string) {
   sendCommand("write_file", { path, content });
 }
 
+export function sendCreateFile(fileName: string) {
+  sendCommand("write_file", { path: fileName, content: "" });
+}
+
 export function sendEditMessage(messageId: string, content: string) {
   sendCommand("edit_message", { message_id: messageId, content });
 }

@@ -480,8 +480,9 @@ class CoworkerAgent(BaseAgent):
         assign_to = action.get("assign_to", "")
         assigned_role = None
         if assign_to:
+            al = assign_to.lower()
             for wid, w in self.team.items():
-                if w.name == assign_to:
+                if al in w.name.lower() or al in (w.agent.display_name or "").lower():
                     assigned_role = w.agent.role
                     break
             if not assigned_role:
@@ -496,7 +497,7 @@ class CoworkerAgent(BaseAgent):
             description=action.get("description", ""),
             priority=priority, assigned_role=assigned_role,
         )
-        return f"Task '{task.title}' created."
+        return f"Task '{task.title}' created and assigned to {assign_to or 'unassigned'}."
 
     async def _handle_action_write_file(self, action: dict) -> str:
         path = action.get("path", "")

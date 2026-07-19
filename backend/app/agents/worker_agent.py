@@ -138,6 +138,8 @@ Evaluate quality, completeness, and potential issues. Score 1-10."""
         if not self.current_task:
             return "No task assigned."
         self.current_task.status = TaskStatus.working
+        from app.db.repository import update_task_fields
+        await update_task_fields(self.agent.project_id, self.current_task.id, status="working")
         await self.send_message(
             self.agent.project_id,
             f"Starting work on '{self.current_task.title}'...",
@@ -165,6 +167,7 @@ Evaluate quality, completeness, and potential issues. Score 1-10."""
             pass
         clean_result = state.get("_result", "")
         self.current_task.status = TaskStatus.completed
+        await update_task_fields(self.agent.project_id, self.current_task.id, status="completed")
         self.completed_tasks.append(self.current_task)
         self.agent.memory["completed_tasks"].append({
             "task_id": self.current_task.id,
