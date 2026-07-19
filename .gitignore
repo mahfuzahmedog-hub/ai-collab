@@ -27,3 +27,6 @@ backend/**/*.db
 backend/loc_*.log
 backend/loc_*.log
 .env*
+
+0
+debug_messages.py

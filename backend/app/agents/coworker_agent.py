@@ -135,7 +135,7 @@ _SYSTEM_ACTIONS = {
     "create_agent", "evolve_agent", "evolve_self", "merge_agents", "split_agent", "retire_agent",
     "create_channel", "create_subchannel", "rename_channel", "move_channel", "delete_channel",
     "create_thread", "register_tool", "remove_tool", "create_knowledge_base", "remember_fact",
-    "create_task", "write_file", "read_file", "list_files", "reflect", "read_image",
+    "create_task", "write_file", "read_file", "list_files", "reflect", "read_image", "send_message",
 }
 
 
@@ -153,13 +153,13 @@ class CoworkerAgent(BaseAgent):
             create_agent, evolve_agent, retire_agent,
             create_channel, create_subchannel, rename_channel, delete_channel,
             create_task, delegate_to_agent_tool,
-            search_memories_tool, remember_fact, read_image,
+            search_memories_tool, remember_fact, read_image, send_message,
         )
         essential = [
             create_agent, evolve_agent, retire_agent,
             create_channel, create_subchannel, rename_channel, delete_channel,
             create_task, delegate_to_agent_tool,
-            search_memories_tool, remember_fact, read_image,
+            search_memories_tool, remember_fact, read_image, send_message,
         ]
         return [t.to_openai_tool() for t in essential]
 
@@ -544,6 +544,17 @@ class CoworkerAgent(BaseAgent):
         except Exception as e:
             return f"OCR error: {e}"
 
+    async def _handle_action_send_message(self, action: dict) -> str:
+        channel = action.get("channel", "general")
+        content = action.get("content", "")
+        if not content:
+            return "No message content."
+        mentions = action.get("mentions")
+        if not mentions:
+            mentions = [m.strip() for m in re.findall(r'@(\S+)', content)] or None
+        await self.send_message(self.project.id, content, channel=channel, mentions=mentions)
+        return f"Message posted to #{channel}."
+
     _ACTION_HANDLERS = {
         "create_agent": _handle_action_create_agent,
         "create_channel": _handle_action_create_channel,
@@ -569,6 +580,7 @@ class CoworkerAgent(BaseAgent):
         "read_file": _handle_action_read_file,
         "list_files": _handle_action_list_files,
         "read_image": _handle_action_read_image,
+        "send_message": _handle_action_send_message,
     }
 
     async def execute_tool(self, tool_name: str, params: dict) -> str:

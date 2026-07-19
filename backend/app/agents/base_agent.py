@@ -258,6 +258,13 @@ class BaseAgent:
             target_id = params.get("agent_id") or params.get("name")
             if not target_id:
                 target_id = await find_agent_for_task(team, params.get("task", ""), params.get("skills_needed"))
+            else:
+                # case-insensitive name match
+                tl = target_id.lower()
+                for aid, w in team.items():
+                    if tl in w.name.lower() or tl in (w.agent.display_name or "").lower():
+                        target_id = aid
+                        break
             if not target_id:
                 return json.dumps({"error": "No suitable agent found for delegation"})
             result = await delegate_to_agent(team, target_id, params.get("task", ""), params.get("context"))

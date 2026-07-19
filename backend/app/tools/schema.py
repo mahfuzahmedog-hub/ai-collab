@@ -162,6 +162,15 @@ read_image = ToolDefinition(
     }, ["image_id"]),
 )
 
+send_message = ToolDefinition(
+    name="send_message",
+    description="Post a message to any channel. You can @mention agents by including @AgentName in the content.",
+    parameters=_O({
+        "channel": _S("Channel slug to post in (e.g., 'general', 'dev', 'dm-agent-name')"),
+        "content": _S("Message content (use @Name to mention an agent)"),
+    }, ["channel", "content"]),
+)
+
 create_task = ToolDefinition(
     name="create_task",
     description="Create and optionally assign a task to an agent by role or name.",
@@ -436,7 +445,7 @@ ALL_TOOLS = [
     browser_extract, browser_list_tabs, browser_switch_tab,
     run_python, run_shell, coding_task_tool,
     get_repo, search_repos, get_file_content, create_issue,
-    read_image,
+    read_image, send_message,
 ]
 
 
