@@ -38,8 +38,19 @@ export function getProjectId(): string {
   return projectId;
 }
 
+const pendingQueue: { command: string; args: Record<string, any> }[] = [];
+
+function flushPending() {
+  const socket = ws;
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  while (pendingQueue.length) {
+    const { command, args } = pendingQueue.shift()!;
+    socket.send(JSON.stringify({ type: "command", command, args }));
+  }
+}
+
 export function connect() {
-  if (ws?.readyState === WebSocket.OPEN) return;
+  if (ws?.readyState !== WebSocket.CLOSED && ws?.readyState !== undefined) return;
 
   const pid = getProjectId();
   const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || (
@@ -49,29 +60,31 @@ export function connect() {
   );
   const url = `${WS_BASE}/ws/${pid}/user`;
 
-  ws = new WebSocket(url);
+  const socket = new WebSocket(url);
+  ws = socket;
 
-  ws.onopen = () => {
+  socket.onopen = () => {
     reconnectAttempts = 0;
     if (pingTimer) clearInterval(pingTimer);
-    pingTimer = setInterval(() => { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type: "ping"})); }, PING_INTERVAL);
+    pingTimer = setInterval(() => { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({type: "ping"})); }, PING_INTERVAL);
     useStore.getState().setConnected(true);
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
+    flushPending();
     if (!projectInitialized) {
       projectInitialized = true;
       const storedProject = getStorageItem("active_project_id");
       if (storedProject) {
-        sendCommand("switch_project", { project_id: storedProject });
+        socket.send(JSON.stringify({ type: "command", command: "switch_project", args: { project_id: storedProject } }));
       } else {
-        sendCommand("create_project", { title: "My AI Project" });
+        socket.send(JSON.stringify({ type: "command", command: "create_project", args: { title: "My AI Project" } }));
       }
     }
   };
 
-  ws.onmessage = (event) => {
+  socket.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
       handleMessage(data);
@@ -80,17 +93,19 @@ export function connect() {
     }
   };
 
-  ws.onclose = () => {
+  socket.onclose = () => {
+    if (socket !== ws) return; // ignore old socket
     useStore.getState().setConnected(false);
+    projectInitialized = false; // force re-init on reconnect
     if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY);
     reconnectAttempts++;
     reconnectTimer = setTimeout(() => connect(), delay);
   };
 
-  ws.onerror = (err) => {
+  socket.onerror = (err) => {
     console.error("WS error:", err);
-    ws?.close();
+    socket.close();
   };
 }
 
@@ -101,8 +116,9 @@ export function disconnect() {
 }
 
 export function send(data: Record<string, any>) {
-  if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(data));
+  const socket = ws;
+  if (socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify(data));
   }
 }
 
@@ -111,7 +127,12 @@ export function sendChat(content: string, channel = "general", thread_id?: strin
 }
 
 export function sendCommand(command: string, args: Record<string, any> = {}) {
-  send({ type: "command", command, args });
+  const socket = ws;
+  if (socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: "command", command, args }));
+  } else {
+    pendingQueue.push({ command, args });
+  }
 }
 
 export function sendCreateChannel(name: string, parentId?: string, type: string = "channel") {

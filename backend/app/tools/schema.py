@@ -23,9 +23,11 @@ create_agent = ToolDefinition(
 
 evolve_agent = ToolDefinition(
     name="evolve_agent",
-    description="Update an existing agent's skills, personality, mission, or channel.",
+    description="Update an existing agent's name, display_name, skills, personality, mission, or channel.",
     parameters=_O({
         "agent_id": _S("ID of the agent to evolve"),
+        "name": _S("New name for the agent"),
+        "display_name": _S("New display name"),
         "skills": _A(_S("New skill to add")),
         "personality": _S("Updated personality"),
         "mission": _S("Updated mission"),
@@ -145,11 +147,19 @@ create_knowledge_base = ToolDefinition(
 
 remember_fact = ToolDefinition(
     name="remember_fact",
-    description="Store a durable fact in the workspace memory.",
+    description="Store a durable fact or preference about the user or project (e.g., tech stack, coding style, user preferences). Facts persist across sessions.",
     parameters=_O({
-        "key": _S("Fact key/name"),
-        "value": _S("Fact value/description"),
+        "key": _S("Fact key (e.g. 'tech_stack', 'user_preference', 'project_rule')"),
+        "value": _S("The fact content"),
     }, ["key", "value"]),
+)
+
+read_image = ToolDefinition(
+    name="read_image",
+    description="Extract text from an image using OCR. Use when the user sends a screenshot or image containing text (e.g., error messages, code screenshots, UI text). Pass the image_id from the attachment.",
+    parameters=_O({
+        "image_id": _S("The image ID from the user's attachment (e.g., 'img_abc123.png')"),
+    }, ["image_id"]),
 )
 
 create_task = ToolDefinition(
@@ -426,6 +436,7 @@ ALL_TOOLS = [
     browser_extract, browser_list_tabs, browser_switch_tab,
     run_python, run_shell, coding_task_tool,
     get_repo, search_repos, get_file_content, create_issue,
+    read_image,
 ]
 
 

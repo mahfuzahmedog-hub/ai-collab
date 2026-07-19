@@ -5,7 +5,7 @@ import { useStore } from "@/store";
 import { EventCard } from "./EventCard";
 import { ThreadView } from "./ThreadView";
 import { MessageComposer } from "@/features/chat/MessageComposer";
-import { ToolCallCard } from "@/components/chat/ToolCallCard";
+
 
 export function Timeline() {
   const messages = useStore((s) => s.messages);
@@ -14,7 +14,6 @@ export function Timeline() {
   const streamingChunk = useStore((s) => s.streamingChunk);
   const activeThread = useStore((s) => s.activeThread);
   const threads = useStore((s) => s.threads);
-  const toolCalls = useStore((s) => s.toolCalls);
   const endRef = useRef<HTMLDivElement>(null);
 
   // Filter messages by active channel, excluding thread replies.
@@ -66,16 +65,6 @@ export function Timeline() {
               isLast={idx === channelMessages.length - 1}
               agents={agents}
             />
-          ))}
-          {toolCalls.filter((tc) => tc.status !== "pending").slice(-5).map((tc) => (
-            <div key={tc.id} className="ml-11">
-              <ToolCallCard
-                toolName={tc.tool_name}
-                arguments={tc.arguments}
-                result={tc.result}
-                status={tc.status}
-              />
-            </div>
           ))}
           {streamingChunk && !streamingChunk.done && (
             <EventCard

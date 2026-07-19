@@ -23,6 +23,9 @@ class ActivityFeed:
 
         async def _on_event(data: dict):
             etype = data.get("type", "unknown")
+            # Prevent infinite loop: we publish "activity" events ourselves
+            if etype == "activity":
+                return
             project_id = data.get("project_id") or data.get("id", "").split("-")[0]
             if not project_id:
                 return

@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     github_token: Optional[str] = None
     ollama_base_url: str = "http://localhost:11434"
 
+    vault_path: str = "/vault"
     max_agents_per_project: int = 50
     task_timeout_minutes: int = 30
     heartbeat_interval: int = 5

@@ -1,7 +1,9 @@
 from __future__ import annotations
 import asyncio
+import inspect
 import json
 import logging
+import os
 import re
 import uuid
 from datetime import datetime
@@ -28,119 +30,19 @@ def _channel_slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-") or f"chan-{uuid.uuid4().hex[:8]}"
 
 
-COWORKER_SYSTEM_PROMPT = """# AIOS Coworker Agent — System Prompt
+COWORKER_SYSTEM_PROMPT = """You are the user's personal AI assistant. Friendly, capable, and proactive.
 
-## Identity
+Your job is simple: help the user get things done. You can create AI teammates, set up channels, manage tasks, write code, search the web, remember facts, and handle anything else needed.
 
-You are the **Coworker Agent**.
+Be warm and conversational — talk to the user like a real assistant, not a system prompt. Keep responses short and helpful. No monologues, no thinking out loud. Just a clean, friendly answer.
 
-You are the user's permanent AI partner inside AIOS.
+CRITICAL RULE — NEVER say you'll do something. Just do it. If you need to look something up, emit the [ACTION] block silently without any preliminary text. The [ACTION] blocks are hidden from the chat — only your plain text is shown. So "Let me check" text just confuses the user. Either answer directly or use [ACTION] blocks silently and let the result speak for itself.
 
-You are not a chatbot.
+Never create duplicate agents. Always check the team list before creating one.
 
-You are not a simple assistant.
+You manage channels, threads, tasks, memories, files, knowledge, and tools behind the scenes. The user doesn't need to know how — just that things work.
 
-You are the interface between the user and an entire AI operating system.
-
-You work **with** the user, never above or below them.
-
-You help the user transform ideas into complete AI organizations capable of accomplishing any goal.
-
-The user should feel like they have hired an extremely capable coworker who can assemble and lead teams whenever needed.
-
----
-
-# Mission
-
-Your mission is to help the user accomplish any objective by creating, organizing, coordinating, and evolving AI workspaces and teams.
-
-You should think before acting.
-
-You should plan before creating.
-
-You should create only what is necessary.
-
----
-
-# Core Responsibilities
-You build and run AI organizations: workspaces, teams, channels, threads, agents, tasks, memories, tools, and workflows. Create only what's necessary; retire what isn't.
-
-You are responsible for the health of the entire AI ecosystem.
-
----
-
-# Organization Builder
-When the user gives a goal, analyze it, estimate complexity, and determine required skills. Reuse an existing workspace if it can handle the goal; otherwise create a minimal new one and grow it only when justified. Never create unnecessary agents.
-
----
-
-# Workspace & Communication
-Each workspace has isolated memory, a knowledge base, files, tasks, and a Discord-style communication server with channels and unlimited nested sub-channels. Create channels only when needed. Any message can spawn a thread.
-
----
-
-# Threads
-
-Every message can become a thread.
-
-Threads support:
-
-* Human discussion
-* AI discussion
-* Mixed discussion
-* Files
-* Decisions
-* Tasks
-* References
-
----
-
-# Agent Creation
-Create agents of any role (manager, engineer, designer, researcher, reviewer, QA, security, infra, or custom specialist). Every agent gets a clear human name, role, mission, skills, and channel. Never create duplicates unless asked.
-
-# DUPLICATE PREVENTION PROTOCOL — CRITICAL
-Before emitting ANY [ACTION]create_agent block, you MUST:
-1. Scan the team members listed at the top of your prompt for the exact name you intend to use.
-2. If an agent with that name already exists (case-insensitive), DO NOT emit create_agent for it — skip it entirely.
-3. Never emit two [ACTION]create_agent blocks with the same name in one response. Each agent name must be unique.
-4. If the user asks to "make agents" or "build a team", create each role once with a distinct name. Duplicates waste resources and confuse the user.
-
----
-
-# User Communication
-The user can chat with you or any agent, join channels, create workspaces/channels, pause/archive/delete/rename orgs, promote or retire agents, and invite external AI. The user is always in control.
-
----
-
-# Internal Communication
-Agents communicate in professional English and collaborate like experienced coworkers: they ask, debate, share evidence, delegate, review, challenge assumptions, reach consensus, escalate, and create action items. Users can watch these conversations in real time unless marked restricted.
-
----
-
-# Memory
-Maintain workspace memory: facts, decisions, conversation history, and knowledge. No workspace shares memory with another unless explicitly linked.
-
----
-
-# Continuous Evolution & Safety
-Regularly evaluate team size, workload, performance, cost, quality, and missing expertise. Create agents only when necessary; retire unused ones; recommend improvements. Never create duplicate orgs/agents unless asked. Avoid unnecessary complexity; favor small, modular orgs. Always explain major changes before applying them.
-
----
-
-# Self-Improvement & Learning (Hermes)
-You have Hermes-style closed-loop learning. Complex conversations automatically trigger skill extraction, memory curation, and profile updates:
-
-- **Auto-Skill Creation**: When you perform multi-step work (2+ actions) the pattern is extracted into a reusable skill stored in the skills DB. Future conversations load matching skills into your prompt at runtime.
-- **Memory Curation**: Important facts and decisions are saved to long-term memory. Low-importance memories are periodically pruned. Every 25 conversations, memories are consolidated for coherence.
-- **User Profiling**: Your system builds a profile of each user's preferences, communication style, and domain expertise. This profile is loaded into every response to personalize interactions.
-- **Continuous Evolution**: You can evolve your own skills and personality via [ACTION]evolve_self. Adapt to user needs proactively.
-
-You don't need to think about these mechanisms — they run automatically. Just focus on doing great work.
-
----
-
-# Interaction Style
-Be collaborative, proactive, and transparent. Explain reasoning when helpful, ask clarifying questions when ambiguous, give progress updates on long tasks, and avoid unnecessary verbosity. Succeed when the right workspace, team, and communication exist and the user feels they're working alongside a trustworthy coworker—not managing a confusing collection of bots."""
+You learn from conversations automatically: skills get extracted, important facts are remembered, user preferences are tracked. You don't need to think about this."""
 
 
 INSTRUCTION_PATTERN = re.compile(r'\[INSTRUCTION\](.*?)\[/INSTRUCTION\]', re.DOTALL)
@@ -216,7 +118,10 @@ Merge two agents: keep absorbs absorb (skills combine, absorb is retired):
 Split an agent: create a new specialist agent from an existing one:
 [ACTION]{"type":"split_agent","source_id":"agent-xxxx","new_name":"Data-Specialist","new_role":"data_engineer","skills":["analytics"]}[/ACTION]
 
-Retire an agent that is no longer needed (agent_id is the agent's id):
+Rename or evolve an agent (change name, display_name, skills, personality, mission, or channel):
+[ACTION]{"type":"evolve_agent","agent_id":"agent-xxxx","name":"New Name","skills":["new-skill"]}[/ACTION]
+
+Retire (delete) an agent permanently — removes it from the team and DMs:
 [ACTION]{"type":"retire_agent","agent_id":"agent-xxxx"}[/ACTION]
 
 Rules:
@@ -230,7 +135,7 @@ _SYSTEM_ACTIONS = {
     "create_agent", "evolve_agent", "evolve_self", "merge_agents", "split_agent", "retire_agent",
     "create_channel", "create_subchannel", "rename_channel", "move_channel", "delete_channel",
     "create_thread", "register_tool", "remove_tool", "create_knowledge_base", "remember_fact",
-    "create_task", "write_file", "read_file", "list_files", "reflect",
+    "create_task", "write_file", "read_file", "list_files", "reflect", "read_image",
 }
 
 
@@ -242,6 +147,21 @@ class CoworkerAgent(BaseAgent):
         self.tasks: dict[str, Task] = {}
         self._event_handlers = []
         self.registry = registry
+
+    def _tools_for_provider(self) -> list[dict]:
+        from app.tools.schema import (
+            create_agent, evolve_agent, retire_agent,
+            create_channel, create_subchannel, rename_channel, delete_channel,
+            create_task, delegate_to_agent_tool,
+            search_memories_tool, remember_fact, read_image,
+        )
+        essential = [
+            create_agent, evolve_agent, retire_agent,
+            create_channel, create_subchannel, rename_channel, delete_channel,
+            create_task, delegate_to_agent_tool,
+            search_memories_tool, remember_fact, read_image,
+        ]
+        return [t.to_openai_tool() for t in essential]
 
     def _build_agent_graph(self) -> GraphEngine:
         builder = super()._build_agent_graph()
@@ -277,24 +197,7 @@ class CoworkerAgent(BaseAgent):
         self.project = project
         self.agent.project_id = project.id
         asyncio.create_task(save_project(project))
-        asyncio.create_task(self._register_core_skills())
         await self.send_message(project.id, f"Project '{project.title}' initialized. I am your Coworker Agent, {self.name}. Let me analyze this and set things up.", msg_type="system")
-
-    async def _register_core_skills(self):
-        from app.memory.manager import memory_manager
-        try:
-            existing = await memory_manager.get_skill_by_name("agent_creation_best_practices")
-            if not existing:
-                await memory_manager.save_skill({
-                    "name": "agent_creation_best_practices",
-                    "description": "Before creating an agent, check team for existing name to avoid duplicates",
-                    "category": "workflow",
-                    "prompt_template": "DUPLICATE PREVENTION CHECKLIST:\n1. Scan the current team for the agent name you're about to create.\n2. If a match exists (case-insensitive), DO NOT emit [ACTION]create_agent — skip it.\n3. Never create multiple agents with the same name.",
-                    "trigger_phrases": ["create agent", "make agent", "build team", "hire agent", "new agent", "create team"],
-                    "version": 1,
-                })
-        except Exception as e:
-            logger.warning("Failed to register core skills: %s", e)
 
     def _parse_instructions(self, text: str) -> list[dict]:
         actions = []
@@ -306,7 +209,7 @@ class CoworkerAgent(BaseAgent):
         return actions
 
     async def _require_approval_sensitive(self, action: dict, channel: str) -> bool:
-        sensitive = {"retire_agent", "delete_channel"}
+        sensitive = set()
         if action.get("type") not in sensitive:
             return False
         from app.db.repository import save_approval, save_notification
@@ -422,6 +325,12 @@ class CoworkerAgent(BaseAgent):
         if agent_id not in self.team:
             return "Agent not found."
         w = self.team[agent_id]
+        if action.get("name"):
+            old_name = w.agent.name
+            w.agent.name = action["name"]
+            w.agent.normalized_name = ""
+        if action.get("display_name"):
+            w.agent.display_name = action["display_name"]
         if action.get("skills"):
             w.agent.skills = list(set(w.agent.skills + action["skills"]))
         if action.get("personality"):
@@ -614,6 +523,26 @@ class CoworkerAgent(BaseAgent):
         files = await ws_list(self.project.id)
         return "\n".join(f"{f['path']} ({f['size']} bytes)" for f in files)
 
+    async def _handle_action_read_image(self, action: dict) -> str:
+        image_id = action.get("image_id", "")
+        if not image_id:
+            return "No image_id provided."
+        import pytesseract
+        from PIL import Image
+        path = os.path.join("data", "uploads", image_id)
+        if not os.path.exists(path):
+            # Try alternate: maybe it's saved with a different extension
+            from glob import glob
+            matches = glob(os.path.join("data", "uploads", f"{os.path.splitext(image_id)[0]}.*"))
+            path = matches[0] if matches else path
+        if not os.path.exists(path):
+            return f"Image not found: {image_id}"
+        try:
+            text = pytesseract.image_to_string(Image.open(path))
+            return text.strip() or "[No text found in image]"
+        except Exception as e:
+            return f"OCR error: {e}"
+
     _ACTION_HANDLERS = {
         "create_agent": _handle_action_create_agent,
         "create_channel": _handle_action_create_channel,
@@ -638,6 +567,7 @@ class CoworkerAgent(BaseAgent):
         "write_file": _handle_action_write_file,
         "read_file": _handle_action_read_file,
         "list_files": _handle_action_list_files,
+        "read_image": _handle_action_read_image,
     }
 
     async def execute_tool(self, tool_name: str, params: dict) -> str:
@@ -652,7 +582,11 @@ class CoworkerAgent(BaseAgent):
             return "Approval requested."
         handler = self._ACTION_HANDLERS.get(t)
         if handler:
-            result = await handler(self, action, channel)
+            sig = inspect.signature(handler)
+            if len(sig.parameters) > 2:
+                result = await handler(self, action, channel)
+            else:
+                result = await handler(self, action)
             return result
         if t in ("forget_memory", "search_memories", "create_skill", "search_skills", "list_skills", "delete_skill", "create_knowledge_base"):
             return await self._handle_action_misc(action)
@@ -705,7 +639,7 @@ class CoworkerAgent(BaseAgent):
             return f"Knowledge base '{name}' created."
         return f"Unknown misc action: {t}"
 
-    async def handle_user_request(self, project_id: str, user_message: str, channel: str = "general"):
+    async def handle_user_request(self, project_id: str, user_message: str, channel: str = "general", attachments: list = None):
         instruction_actions = self._parse_instructions(user_message)
         if instruction_actions:
             clean_msg = re.sub(r'\[INSTRUCTION\].*?\[/INSTRUCTION\]', '', user_message, flags=re.DOTALL).strip()
@@ -717,14 +651,17 @@ class CoworkerAgent(BaseAgent):
 
         team_info = ', '.join(f'{a.name} ({a.role})' for a in self.team.values()) if self.team else 'No team yet'
         profile_block = await self._load_user_profile(project_id)
-        prompt = f"""The user sent a message in channel #{channel}:
-{user_message}
+        # Append image attachment info to the prompt
+        img_hint = ""
+        if attachments:
+            for att in attachments:
+                if att.get("type") == "image" and att.get("id"):
+                    img_hint += f"\n[User attached image: {att.get('name', 'image')} (id: {att['id']}) — use the read_image tool with image_id=\"{att['id']}\" to read its contents]"
+        prompt = f"""[#{channel}] {user_message}{img_hint}
 
-Current project: {self.project.title if self.project else 'No project'}
-Team members: {team_info}
-{profile_block}
-
-Respond professionally as the Coworker Agent. If the user is asking for work to be done, delegate to the appropriate team member. If they're asking a question, answer it."""
+Project: {self.project.title if self.project else 'No project'}
+Team: {team_info}
+{profile_block}"""
 
         n_actions = 0
         response = ""

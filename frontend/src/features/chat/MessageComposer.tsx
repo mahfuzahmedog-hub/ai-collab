@@ -24,7 +24,9 @@ export function MessageComposer({
   const [value, setValue] = useState("");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIdx, setMentionIdx] = useState(0);
+  const [attachments, setAttachments] = useState<{name: string; data: string; type: string}[]>([]);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const matches = useMemo(() => {
     if (mentionQuery === null) return [];
@@ -63,11 +65,30 @@ export function MessageComposer({
   }
 
   function handleSend() {
-    if (!value.trim() || disabled) return;
+    if ((!value.trim() && attachments.length === 0) || disabled) return;
     const mentions = [...value.matchAll(/@([^\s@]+)/g)].map((m) => m[1]);
-    send({ type: "chat", content: value.trim(), sender_name: "User", channel, mentions });
+    const payload: Record<string, unknown> = { type: "chat", content: value.trim(), sender_name: "User", channel, mentions };
+    if (attachments.length > 0) payload.attachments = attachments;
+    send(payload);
     setValue("");
+    setAttachments([]);
     setMentionQuery(null);
+  }
+
+  function handleAttach(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setAttachments([...attachments, { name: file.name, data: reader.result as string, type: "image" }]);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  function removeAttachment(idx: number) {
+    setAttachments(attachments.filter((_, i) => i !== idx));
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -124,6 +145,16 @@ export function MessageComposer({
       )}
       <div className="flex items-end gap-2">
         <div className="relative flex-1">
+          {attachments.length > 0 && (
+            <div className="flex gap-2 mb-2 flex-wrap">
+              {attachments.map((att, i) => (
+                <div key={i} className="relative group">
+                  <img src={att.data} alt={att.name} className="h-16 w-16 object-cover rounded border border-dark-600" />
+                  <button type="button" onClick={() => removeAttachment(i)} className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-600 text-white rounded-full text-xs leading-none hidden group-hover:flex items-center justify-center">&times;</button>
+                </div>
+              ))}
+            </div>
+          )}
           <textarea
             ref={taRef}
             value={value}
@@ -135,18 +166,11 @@ export function MessageComposer({
             className="w-full bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-white placeholder-dark-500 resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
             style={{ minHeight: MIN_H, maxHeight: MAX_H }}
           />
-          <div
-            className="absolute left-2 bottom-1.5 group"
-            title="File uploads coming soon"
-          >
-            <button
-              type="button"
-              disabled
-              className="text-dark-500 cursor-not-allowed"
-              aria-label="Attach file"
-            >
+          <div className="absolute left-2 bottom-1.5 group">
+            <button type="button" onClick={() => fileRef.current?.click()} className="text-dark-400 hover:text-dark-200" aria-label="Attach file">
               <Paperclip className="w-4 h-4" />
             </button>
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAttach} />
           </div>
         </div>
         <button

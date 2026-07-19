@@ -2,10 +2,7 @@ import asyncio
 import logging
 from collections import defaultdict
 
-from app.db.repository import load_project_agents, merge_agents, load_project
-from app.db.session import async_session
-from app.db.models import ProjectModel, AgentModel
-from sqlalchemy import select
+from app.db.repository import load_project_agents, merge_agents, load_project, load_all_project_ids
 from app.models.agent import normalize_name
 
 logger = logging.getLogger(__name__)
@@ -14,9 +11,7 @@ logger = logging.getLogger(__name__)
 async def deduplicate_all_projects():
     """Scan every project, merge duplicate agents into canonical singletons."""
     logger.info("Dedup: Starting project scan for duplicate agents...")
-    async with async_session() as s:
-        result = await s.execute(select(ProjectModel.id))
-        project_ids = [row[0] for row in result.fetchall()]
+    project_ids = await load_all_project_ids()
 
     for pid in project_ids:
         await deduplicate_project(pid)

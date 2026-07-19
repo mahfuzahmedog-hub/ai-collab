@@ -128,6 +128,15 @@ class BaseAgent:
 
                 state["_tool_calls"] = tool_calls
                 state["_has_tool_calls"] = len(tool_calls) > 0
+                if tool_calls:
+                    messages.append({
+                        "role": "assistant",
+                        "content": content or None,
+                        "tool_calls": [
+                            {"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": tc.arguments}}
+                            for tc in tool_calls
+                        ],
+                    })
                 if content:
                     state.setdefault("response", "")
                     state["response"] += content
@@ -135,22 +144,29 @@ class BaseAgent:
                 logger.error("Agent %s llm_call error: %s", self.name, e)
                 state["_tool_calls"] = []
                 state["_has_tool_calls"] = False
-                if not state.get("response"):
-                    # ponytail: single no-tool retry so a tool-flow failure
-                    # still yields a usable reply instead of an error string.
-                    # Strip tool/assistant-tool_call messages so the plain call
-                    # isn't rejected by providers that forbid orphan tool roles.
-                    retry_messages = [m for m in messages if m.get("role") in ("system", "user")]
-                    try:
-                        retry_content = (await provider.chat(retry_messages, temperature=temperature)) or ""
-                        retry_tcs = self._parse_actions_to_tool_calls(retry_content)
-                        if retry_tcs:
-                            retry_content = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', retry_content, flags=re.DOTALL).strip()
-                            state["_tool_calls"] = retry_tcs
-                            state["_has_tool_calls"] = True
-                        state["_new_content"] = retry_content
-                    except Exception:
-                        state["_new_content"] = f"LLM error: {e}"
+                # ponytail: single no-tool retry so a tool-flow failure
+                # still yields a usable reply instead of an error string.
+                # Strip tool/assistant-tool_call messages so the plain call
+                # isn't rejected by providers that forbid orphan tool roles.
+                retry_messages = [m for m in messages if m.get("role") in ("system", "user")]
+                try:
+                    retry_content = (await provider.chat(retry_messages, temperature=temperature)) or ""
+                    retry_tcs = self._parse_actions_to_tool_calls(retry_content)
+                    if retry_tcs:
+                        retry_content = re.sub(r'\[ACTION\].*?\[/ACTION\]', '', retry_content, flags=re.DOTALL).strip()
+                        state["_tool_calls"] = retry_tcs
+                        state["_has_tool_calls"] = True
+                        messages.append({
+                            "role": "assistant",
+                            "content": retry_content or None,
+                            "tool_calls": [
+                                {"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": tc.arguments}}
+                                for tc in retry_tcs
+                            ],
+                        })
+                    state["_new_content"] = retry_content
+                except Exception:
+                    state["_new_content"] = f"LLM error: {e}"
 
             return Command()
 

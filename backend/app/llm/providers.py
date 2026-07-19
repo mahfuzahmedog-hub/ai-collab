@@ -90,11 +90,12 @@ class ZenProvider(LLMProvider):
         headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
         try:
             if stream:
-                return await self._client.stream("POST", url, headers=headers, json=body, timeout=120)
+                return self._client.stream("POST", url, headers=headers, json=body, timeout=120)
             resp = await self._client.post(url, headers=headers, json=body, timeout=120)
             resp.raise_for_status()
             return resp
         except httpx.HTTPStatusError as e:
+            logger.error("Zen API %d: %s", e.response.status_code, json.dumps(body, indent=2)[:2000])
             msg = {401: "Invalid Zen API key. Add a valid key in Settings.", 403: "Zen API access denied. Check your key permissions.", 429: "Rate limited. Add more API keys (comma-separate in Settings)."}.get(e.response.status_code, f"Zen API error (HTTP {e.response.status_code}).")
             raise RuntimeError(msg)
 
@@ -122,7 +123,7 @@ class ZenProvider(LLMProvider):
                         except json.JSONDecodeError:
                             continue
                         delta = (data.get("choices") or [{}])[0].get("delta", {}) or {}
-                        content = delta.get("content") or delta.get("reasoning_content", "")
+                        content = delta.get("content")
                         if content:
                             yield content
             except httpx.HTTPStatusError as e:
@@ -165,7 +166,7 @@ class ZenProvider(LLMProvider):
                             continue
                         first = choices[0] or {}
                         delta = first.get("delta", {}) or {}
-                        content = delta.get("content") or delta.get("reasoning_content", "")
+                        content = delta.get("content")
                         if content:
                             yield content
                         for tc in delta.get("tool_calls", []):

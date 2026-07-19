@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 from datetime import datetime
 from uuid import uuid4
 from fastapi import WebSocket, WebSocketDisconnect
@@ -44,6 +45,24 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                     agent_names = {a.name for a in await load_project_agents(project_id)}
                     all_mentions = content_mentions & agent_names
                     all_mentions |= set(data.get("mentions") or [])
+                    # Save image attachments to disk
+                    attachments = data.get("attachments", [])
+                    for att in attachments:
+                        if att.get("type") == "image" and att.get("data"):
+                            import hashlib
+                            img_data = att["data"]
+                            if "," in img_data:
+                                img_data = img_data.split(",", 1)[1]
+                            img_bytes = __import__("base64").b64decode(img_data)
+                            ext = os.path.splitext(att.get("name", "image.png"))[1] or ".png"
+                            img_id = f"img_{hashlib.md5(img_bytes).hexdigest()[:12]}{ext}"
+                            img_dir = os.path.join("data", "uploads")
+                            os.makedirs(img_dir, exist_ok=True)
+                            with open(os.path.join(img_dir, img_id), "wb") as f:
+                                f.write(img_bytes)
+                            att["id"] = img_id
+                            del att["data"]
+
                     msg = {
                         "type": "message",
                         "id": f"msg-{uuid4().hex[:8]}",
@@ -57,7 +76,7 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                         "thread_id": data.get("thread_id", None),
                         "reply_to": None,
                         "mentions": list(all_mentions),
-                        "attachments": [],
+                        "attachments": attachments,
                         "metadata": {},
                         "timestamp": datetime.utcnow().isoformat() + "Z",
                     }
@@ -91,7 +110,7 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                         if agent_manager.boss:
                             coworker_slug = agent_manager.boss.name.lower().replace(" ", "-")
                             if agent_name.lower() == coworker_slug:
-                                await agent_manager.boss.handle_user_request(project_id, content, channel)
+                                await agent_manager.boss.handle_user_request(project_id, content, channel, attachments)
                                 found = True
                             else:
                                 for wid, worker in agent_manager.boss.team.items():
@@ -113,7 +132,7 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                                 "channel": channel,
                             })
                     elif agent_manager.boss:
-                        await agent_manager.boss.handle_user_request(project_id, content, channel)
+                        await agent_manager.boss.handle_user_request(project_id, content, channel, attachments)
 
                 elif msg_type == "command":
                     cmd = data.get("command", "")
