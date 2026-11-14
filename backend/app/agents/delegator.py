@@ -3,10 +3,8 @@ import asyncio
 import logging
 from typing import Any, Optional
 
-from app.models.agent import Agent, AgentStatus
 from app.agents.worker_agent import WorkerAgent
 from app.core.event_bus import event_bus
-from app.db.repository import save_agent
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +56,16 @@ async def delegate_to_agent(
         "to": agent_name,
         "task": task[:200],
     })
-    worker.assign_task({"title": task[:80], "description": task, "context": context or {}})
+    from app.services.task_manager import create_task
+
+    description = task if not context else f"{task}\n\nContext: {context}"
+    task_model = await create_task(
+        project_id=worker.agent.project_id,
+        title=task[:80],
+        description=description,
+        assigned_to=worker.agent.id,
+        assigned_by="delegator",
+    )
+    worker.assign_task(task_model)
     asyncio.create_task(worker.work_on_task())
     return f"Delegated to {agent_name}: {task[:200]}"
