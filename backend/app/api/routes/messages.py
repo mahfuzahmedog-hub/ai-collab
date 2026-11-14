@@ -3,7 +3,7 @@ from typing import Optional
 from app.websocket.handlers import handle_websocket
 from app.websocket.manager import ws_manager
 from app.models.message import Message
-from app.db.repository import save_message, load_project_messages, delete_message
+from app.db.vault import save_message, load_project_messages, delete_message
 
 router = APIRouter()
 

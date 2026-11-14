@@ -9,7 +9,7 @@ from app.websocket.manager import ws_manager
 from app.core.event_bus import event_bus
 from app.services.agent_manager import agent_manager
 from app.services.activity_feed import activity_feed  # noqa: F401 — ensures activity feed subscriber is registered
-from app.db.repository import load_project_messages, load_project_agents, load_project, save_project, save_message
+from app.db.vault import load_project_messages, load_project_agents, load_project, save_project, save_message
 from app.models.message import Message
 from app.models.agent import AgentStatus
 
@@ -38,14 +38,12 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                     content = data.get("content", "")
                     sender = data.get("sender_name", "User")
                     channel = data.get("channel", "general")
-                    # Parse @mentions from content + client-provided mentions
                     import re as _re
-                    from app.db.repository import load_project_agents
+                    from app.db.vault import load_project_agents
                     content_mentions = set(_re.findall(r'@(\w[\w-]*)', content))
                     agent_names = {a.name for a in await load_project_agents(project_id)}
                     all_mentions = content_mentions & agent_names
                     all_mentions |= set(data.get("mentions") or [])
-                    # Save image attachments to disk
                     attachments = data.get("attachments", [])
                     for att in attachments:
                         if att.get("type") == "image" and att.get("data"):
@@ -83,9 +81,8 @@ async def handle_websocket(websocket: WebSocket, project_id: str, user_id: str =
                     await event_bus.publish("message", msg)
                     asyncio.create_task(save_message(Message(**msg)))
 
-                    # Create notification for @mentions
                     if all_mentions:
-                        from app.db.repository import save_notification
+                        from app.db.vault import save_notification
                         from app.models.ops import Notification
                         for mention in all_mentions:
                             n = Notification(
@@ -166,8 +163,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             project = Project(title=title, description=description, id=project_id)
             await save_project(project)
 
-            # Create default channels
-            from app.db.repository import save_channel
+            from app.db.vault import save_channel
             from app.models.channel import Channel
             for ch_def in [{"id":"general","name":"#general"}, {"id":"planning","name":"#planning"}, {"id":"architecture","name":"#architecture"}, {"id":"dev","name":"#dev"}]:
                 ch = Channel(id=ch_def["id"], project_id=project_id, name=ch_def["name"])
@@ -284,20 +280,20 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             parent_id=parent_id,
             type=ch_type,
         )
-        from app.db.repository import save_channel
+        from app.db.vault import save_channel
         asyncio.create_task(save_channel(ch))
         await event_bus.publish("channel_created", {**ch.model_dump(), "channel_type": ch.type})
 
     elif command == "edit_message":
         msg_id = args.get("message_id", "")
         content = args.get("content", "")
-        from app.db.repository import update_message_content
+        from app.db.vault import update_message_content
         if msg_id and content and await update_message_content(project_id, msg_id, content):
             await ws_manager.broadcast(project_id, {"type": "message_edited", "message_id": msg_id, "content": content})
 
     elif command == "delete_message":
         msg_id = args.get("message_id", "")
-        from app.db.repository import delete_message
+        from app.db.vault import delete_message
         if msg_id and await delete_message(project_id, msg_id):
             await ws_manager.broadcast(project_id, {"type": "message_deleted", "message_id": msg_id})
 
@@ -315,7 +311,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             title=title,
             created_by=user_id,
         )
-        from app.db.repository import save_thread
+        from app.db.vault import save_thread
         asyncio.create_task(save_thread(thread))
         await event_bus.publish("thread_created", thread.model_dump())
 
@@ -348,7 +344,6 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             logger.warning("get_file_tree failed: %s", e)
             file_tree = []
 
-        # Restore the CoworkerAgent in memory so messages get responses
         try:
             await agent_manager.restore_boss(project_id)
             await agent_manager.restore_workspace(project_id)
@@ -372,7 +367,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             "files": file_tree,
         }))
         try:
-            from app.db.repository import load_project_tasks
+            from app.db.vault import load_project_tasks
             tasks = await load_project_tasks(project_id)
             await ws.send_text(json.dumps({
                 "type": "task_list",
@@ -381,7 +376,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
         except Exception as e:
             logger.warning("load_project_tasks failed: %s", e)
         try:
-            from app.db.repository import load_project_channels_tree, load_project_threads
+            from app.db.vault import load_project_channels_tree, load_project_threads
             channel_tree = await load_project_channels_tree(project_id)
             await ws.send_text(json.dumps({
                 "type": "channel_tree",
@@ -396,7 +391,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             logger.warning("load channels/threads failed: %s", e)
 
         try:
-            from app.db.repository import load_execution_logs, load_notifications, load_approvals
+            from app.db.vault import load_execution_logs, load_notifications, load_approvals
             logs = await load_execution_logs(project_id)
             await ws.send_text(json.dumps({
                 "type": "execution_logs",
@@ -416,7 +411,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             logger.warning("load ops data failed: %s", e)
 
         try:
-            from app.db.repository import load_lifecycle_audits
+            from app.db.vault import load_lifecycle_audits
             audits = await load_lifecycle_audits(project_id)
             await ws.send_text(json.dumps({
                 "type": "lifecycle_audit_list",
@@ -427,14 +422,13 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
 
     elif command == "approve":
         approval_id = args.get("approval_id", "")
-        from app.db.repository import get_approval, save_approval, delete_channel
+        from app.db.vault import get_approval, save_approval, delete_channel
         from app.models.ops import Approval
         a = await get_approval(approval_id)
         if a and a.status == "pending":
             a.status = "approved"
             await save_approval(a)
             await event_bus.publish("approval_updated", a.model_dump())
-            # Execute the approved action
             payload = a.payload or {}
             atype = payload.get("type")
             if atype == "delete_channel":
@@ -452,7 +446,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
 
     elif command == "reject":
         approval_id = args.get("approval_id", "")
-        from app.db.repository import get_approval, save_approval
+        from app.db.vault import get_approval, save_approval
         a = await get_approval(approval_id)
         if a and a.status == "pending":
             a.status = "rejected"
@@ -462,20 +456,17 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
     elif command == "switch_project":
         new_project_id = args.get("project_id", "")
         if new_project_id:
-            # Switch agent manager to new project
             try:
                 await agent_manager.switch_project(new_project_id)
             except Exception as e:
                 logger.warning("switch_project failed: %s", e)
 
-            # Restore the CoworkerAgent + channels in memory so returning users can chat
             try:
                 await agent_manager.restore_boss(new_project_id)
                 await agent_manager.restore_workspace(new_project_id)
             except Exception as e:
                 logger.warning("restore failed: %s", e)
 
-            # Load new project data
             try:
                 messages = await load_project_messages(new_project_id, limit=200)
             except Exception as e:
@@ -514,7 +505,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
                 "files": file_tree,
             }))
             try:
-                from app.db.repository import load_project_tasks
+                from app.db.vault import load_project_tasks
                 tasks = await load_project_tasks(new_project_id)
                 await ws.send_text(json.dumps({
                     "type": "task_list",
@@ -529,7 +520,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
 
     elif command == "create_task":
         from app.models.task import Task, TaskPriority
-        from app.db.repository import save_task
+        from app.db.vault import save_task
         title = args.get("title", "").strip()
         if title:
             task = Task(
@@ -544,7 +535,6 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
                 task.status = "assigned"
             await save_task(task)
             await ws_manager.broadcast(project_id, {"type": "task_created", **task.model_dump()})
-            # Trigger agent to work on the task if assigned
             if args.get("assigned_to") and agent_manager.boss:
                 from app.services.task_manager import transition_task
                 target = None
@@ -558,7 +548,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
                     asyncio.create_task(target.work_on_task())
 
     elif command == "update_task":
-        from app.db.repository import update_task_fields
+        from app.db.vault import update_task_fields
         task_id = args.get("task_id", "")
         fields = {}
         for k in ("status", "priority", "assigned_to", "title", "description"):
@@ -568,7 +558,6 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             updated = await update_task_fields(project_id, task_id, **fields)
             if updated:
                 await ws_manager.broadcast(project_id, {"type": "task_updated", "id": updated.id, **updated.model_dump()})
-                # Trigger agent work when dragged to assigned/working
                 new_status = fields.get("status", "")
                 if new_status in ("assigned", "working") and agent_manager.boss:
                     target = None
@@ -598,7 +587,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
     elif command == "update_agent":
         agent_id = args.get("agent_id", "")
         name = args.get("name")
-        from app.db.repository import load_agent as _load_agent_db, save_agent as _save_agent_db
+        from app.db.vault import load_agent as _load_agent_db, save_agent as _save_agent_db
         from app.models.agent import Agent as _AgentModel
         if agent_manager.boss and agent_manager.boss.id == agent_id:
             target_agent = agent_manager.boss.agent
@@ -623,7 +612,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
             await event_bus.publish("agent_removed", {"agent_id": agent_id, "project_id": project_id})
 
     elif command == "delete_channel":
-        from app.db.repository import delete_channel as _delete_ch
+        from app.db.vault import delete_channel as _delete_ch
         cid = args.get("id", "")
         if cid:
             deleted = await _delete_ch(project_id, cid)
@@ -632,7 +621,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
                 await ws.send_text(json.dumps({"type": "channel_deleted", "ids": deleted}))
 
     elif command == "mark_notification_read":
-        from app.db.repository import mark_notification_read
+        from app.db.vault import mark_notification_read
         nid = args.get("notification_id", "")
         if nid and await mark_notification_read(project_id, nid):
             await ws_manager.broadcast(project_id, {"type": "notification_read", "notification_id": nid})
@@ -652,7 +641,7 @@ async def handle_command(project_id: str, command: str, args: dict, ws: WebSocke
         path = args.get("path", "")
         content = None
         try:
-            from app.db.repository import get_file_content
+            from app.db.vault import get_file_content
             content = await get_file_content(project_id, path)
         except Exception as e:
             logger.warning("get_file_content failed: %s", e)

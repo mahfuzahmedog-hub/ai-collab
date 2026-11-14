@@ -7,7 +7,7 @@ from app.core.config import settings
 from app.agents.coworker_agent import CoworkerAgent
 from app.agents.worker_agent import WorkerAgent
 from app.core.event_bus import event_bus
-from app.db.repository import save_agent, load_project_agents, load_project_messages, load_project
+from app.db.vault import save_agent, load_project_agents, load_project_messages, load_project
 from app.services.agent_registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
@@ -21,11 +21,9 @@ class AgentManager:
         self.registry: Optional[AgentRegistry] = None
 
     async def create_coworker(self, project_id: str, name: str = "Coworker") -> CoworkerAgent:
-        # Initialize registry for this project
         self.registry = AgentRegistry(project_id)
         await self.registry.load_from_db()
 
-        # Use registry to find-or-create — only one Coworker per project
         coworker, is_new = await self.registry.find_or_create({
             "name": name,
             "role": "coworker",
@@ -51,7 +49,6 @@ class AgentManager:
     async def restore_boss(self, project_id: str):
         """Load the coworker agent from DB and restore it in memory."""
         try:
-            # Initialize registry and load from DB
             self.registry = AgentRegistry(project_id)
             await self.registry.load_from_db()
 
@@ -85,7 +82,7 @@ class AgentManager:
     async def restore_workspace(self, project_id: str):
         """Restore channels, threads, KB and publish them to the frontend."""
         try:
-            from app.db.repository import load_project_channels, load_project_threads, load_knowledge_base
+            from app.db.vault import load_project_channels, load_project_threads, load_knowledge_base
             channels = await load_project_channels(project_id)
             for ch in channels:
                 await event_bus.publish("channel_created", ch.model_dump())

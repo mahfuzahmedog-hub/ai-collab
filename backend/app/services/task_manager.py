@@ -4,7 +4,7 @@ import logging
 from typing import Optional
 from app.models.task import Task, TaskStatus, TaskPriority
 from app.core.event_bus import event_bus
-from app.db.repository import save_task, update_task_fields
+from app.db.vault import save_task, update_task_fields
 
 logger = logging.getLogger(__name__)
 

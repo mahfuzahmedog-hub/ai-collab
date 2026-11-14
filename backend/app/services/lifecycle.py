@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from app.models.agent import Agent, AgentStatus
 from app.core.event_bus import event_bus
-from app.db.repository import save_agent, save_lifecycle_audit
+from app.db.vault import save_agent, save_lifecycle_audit
 from app.graph.checkpointer import SqliteSaver
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ class LifecycleEngine:
         }
         await event_bus.publish("lifecycle_state_changed", event)
         if new_status in NOTIFY_TRANSITIONS:
-            from app.db.repository import save_notification
+            from app.db.vault import save_notification
             from app.models.ops import Notification
             n = Notification(
                 project_id=self.agent.project_id, type="system",

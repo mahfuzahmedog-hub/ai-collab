@@ -18,7 +18,7 @@ from app.models.channel import Channel
 from app.models.thread import Thread
 from app.core.event_bus import event_bus
 from app.core.config import settings
-from app.db.repository import save_agent, save_task, save_project, save_channel, save_thread, save_knowledge_base_entry
+from app.db.vault import save_agent, save_task, save_project, save_channel, save_thread, save_knowledge_base_entry
 from app.graph.engine import GraphEngine, START, END
 from app.graph.types import Command, Interrupt
 from app.graph.interrupts import interrupt_context
@@ -212,7 +212,7 @@ class CoworkerAgent(BaseAgent):
         sensitive = set()
         if action.get("type") not in sensitive:
             return False
-        from app.db.repository import save_approval, save_notification
+        from app.db.vault import save_approval, save_notification
         from app.models.ops import Approval, Notification
         a = Approval(
             project_id=self.project.id, agent_id=self.id, agent_name=self.name,
@@ -237,7 +237,6 @@ class CoworkerAgent(BaseAgent):
         name = (action.get("name") or "").strip()
         if not name:
             return "Agent name is required."
-        # Check registry before delegating to create_team (the registry is the source of truth)
         if self.registry:
             existing = await self.registry.find_by_normalized_name(name)
             if existing:
@@ -281,7 +280,7 @@ class CoworkerAgent(BaseAgent):
         return f"Sub-channel '{name}' created."
 
     async def _handle_action_rename_channel(self, action: dict) -> str:
-        from app.db.repository import rename_channel
+        from app.db.vault import rename_channel
         cid = _channel_slug(action.get("id") or action.get("channel") or "")
         new_name = action.get("name", "")
         if cid and new_name and await rename_channel(self.project.id, cid, new_name):
@@ -290,7 +289,7 @@ class CoworkerAgent(BaseAgent):
         return "Rename failed."
 
     async def _handle_action_move_channel(self, action: dict) -> str:
-        from app.db.repository import move_channel
+        from app.db.vault import move_channel
         cid = _channel_slug(action.get("id") or action.get("channel") or "")
         parent = action.get("parent_id")
         parent_id = _channel_slug(parent) if parent else None
@@ -300,7 +299,7 @@ class CoworkerAgent(BaseAgent):
         return "Move failed."
 
     async def _handle_action_delete_channel(self, action: dict) -> str:
-        from app.db.repository import delete_channel
+        from app.db.vault import delete_channel
         cid = _channel_slug(action.get("id") or action.get("channel") or "")
         if cid:
             deleted = await delete_channel(self.project.id, cid)
@@ -365,7 +364,7 @@ class CoworkerAgent(BaseAgent):
             self.agent.mission = action["mission"]
             updated = True
         if updated:
-            from app.db.repository import save_agent
+            from app.db.vault import save_agent
             asyncio.create_task(save_agent(self.agent))
             await event_bus.publish("agent_updated", self.agent.model_dump())
             return f"{self.name} evolved."
@@ -532,7 +531,6 @@ class CoworkerAgent(BaseAgent):
         from PIL import Image
         path = os.path.join("data", "uploads", image_id)
         if not os.path.exists(path):
-            # Try alternate: maybe it's saved with a different extension
             from glob import glob
             matches = glob(os.path.join("data", "uploads", f"{os.path.splitext(image_id)[0]}.*"))
             path = matches[0] if matches else path
@@ -646,7 +644,7 @@ class CoworkerAgent(BaseAgent):
             return f"Skill {skill_id} deleted." if ok else f"Skill {skill_id} not found."
         elif t == "create_knowledge_base":
             name = action.get("name", "default")
-            from app.db.repository import save_knowledge_base_entry
+            from app.db.vault import save_knowledge_base_entry
             asyncio.create_task(save_knowledge_base_entry(self.project.id, name, "_created", "true"))
             await self.send_message(self.project.id, f"Knowledge base '{name}' created.")
             return f"Knowledge base '{name}' created."
@@ -664,7 +662,6 @@ class CoworkerAgent(BaseAgent):
 
         team_info = ', '.join(f'{a.name} ({a.role})' for a in self.team.values()) if self.team else 'No team yet'
         profile_block = await self._load_user_profile(project_id)
-        # Append image attachment info to the prompt
         img_hint = ""
         if attachments:
             for att in attachments:
@@ -714,7 +711,6 @@ Team: {team_info}
             skills = role_info.get("skills", [role])
             specialization = role_info.get("specialization", role)
 
-            # Use registry for atomic find-or-create (handles dedup, DB constraint, concurrency)
             agent_model, is_new = await self.registry.find_or_create({
                 "name": name,
                 "role": role,
@@ -759,7 +755,7 @@ Team: {team_info}
                     await self._assign_and_start(worker, task, description)
                     break
         if assigned_role and self.team:
-            from app.db.repository import save_notification
+            from app.db.vault import save_notification
             from app.models.ops import Notification
             for wid, w in self.team.items():
                 if w.agent.role == assigned_role or assigned_role in w.agent.skills:

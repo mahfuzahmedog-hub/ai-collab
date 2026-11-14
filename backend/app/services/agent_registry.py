@@ -2,7 +2,7 @@ import asyncio
 import logging
 from typing import Optional
 
-from app.db.repository import save_agent, load_project_agents, find_existing_agent, get_or_create_agent, merge_agents
+from app.db.vault import save_agent, load_project_agents, find_existing_agent, get_or_create_agent, merge_agents
 from app.models.agent import Agent, AgentStatus, normalize_name
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,6 @@ class AgentRegistry:
         logger.info("AgentRegistry [%s]: Checking for existing agent (role=%s, specialization=%s, name=%s)",
                      self.project_id, role, specialization, name)
 
-        # Check in-memory cache first (fast path, no DB call)
         existing_id = self._agents_by_norm.get(norm)
         if existing_id:
             existing = self._agents_by_id.get(existing_id)
@@ -59,7 +58,6 @@ class AgentRegistry:
 
         # Serialize concurrent creation per project
         async with self._lock:
-            # Double-check after acquiring lock
             existing_id = self._agents_by_norm.get(norm)
             if existing_id:
                 existing = self._agents_by_id.get(existing_id)
@@ -67,7 +65,6 @@ class AgentRegistry:
                     logger.info("AgentRegistry [%s]: Existing agent found (after lock). Reusing agent %s.", self.project_id, existing.name)
                     return existing, False
 
-            # Check database
             existing = await find_existing_agent(
                 self.project_id,
                 normalized_name=norm,
@@ -110,7 +107,6 @@ class AgentRegistry:
 
     async def remove(self, agent_id: str):
         self._agents_by_id.pop(agent_id, None)
-        # Clean up reverse lookup
         for norm, aid in list(self._agents_by_norm.items()):
             if aid == agent_id:
                 self._agents_by_norm.pop(norm, None)

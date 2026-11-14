@@ -9,7 +9,7 @@ from app.models.agent import Agent, AgentStatus
 from app.models.task import Task, TaskStatus
 from app.core.event_bus import event_bus
 from app.workspace.manager import write_file, read_file, list_files
-from app.db.repository import load_project_messages
+from app.db.vault import load_project_messages
 from app.tools.registry import tool_registry
 from app.graph.engine import GraphEngine, START, END
 from app.graph.types import Command
@@ -138,7 +138,7 @@ Evaluate quality, completeness, and potential issues. Score 1-10."""
         if not self.current_task:
             return "No task assigned."
         self.current_task.status = TaskStatus.working
-        from app.db.repository import update_task_fields
+        from app.db.vault import update_task_fields
         await update_task_fields(self.agent.project_id, self.current_task.id, status="working")
         await self.send_message(
             self.agent.project_id,

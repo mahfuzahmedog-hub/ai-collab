@@ -13,12 +13,10 @@ from app.models.ops import ExecutionLog
 from app.llm import llm_router
 from app.llm.base import ToolCallRequest, LLMResponse
 from app.core.event_bus import event_bus
-from app.db.repository import save_message, save_execution_log
+from app.db.vault import save_message, save_execution_log
 from app.tools.registry import tool_registry
 from app.graph.engine import GraphEngine, START, END
 from app.graph.types import Command
-# ponytail: ContextManager and MemFS were removed; these were optional enrichments.
-# If you re-add them, restore the imports from app.memory.context / app.memory.memfs.
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +75,6 @@ class BaseAgent:
         self._task: Optional[asyncio.Task] = None
         self._lifecycle = LifecycleEngine(agent)
         self._graph: Optional[GraphEngine] = None
-        self._memfs = None
-        self._context_mgr = None
 
     def _build_agent_graph(self) -> GraphEngine:
         builder = GraphEngine()
@@ -259,7 +255,6 @@ class BaseAgent:
             if not target_id:
                 target_id = await find_agent_for_task(team, params.get("task", ""), params.get("skills_needed"))
             else:
-                # case-insensitive name match
                 tl = target_id.lower()
                 for aid, w in team.items():
                     if tl in w.name.lower() or tl in (w.agent.display_name or "").lower():
@@ -302,23 +297,6 @@ class BaseAgent:
 
     def _build_messages(self, prompt: str) -> list[dict]:
         system = self._system_prompt()
-        if self._context_mgr and self._memfs:
-            try:
-                import asyncio
-                future = asyncio.ensure_future(self._context_mgr.compose_prompt(
-                    project_id=self.agent.project_id,
-                    base_system=system,
-                    recent_history=self.agent.chat_history[-20:],
-                    query=prompt,
-                ))
-                return future.result() if future.done() else [
-                    {"role": "system", "content": system},
-                    *self.agent.chat_history[-10:],
-                    {"role": "user", "content": prompt},
-                ]
-            except Exception:
-                pass
-        # ponytail: inline — was from app.agents.context_compressor import compress_history
         history = self.agent.chat_history[-20:] if len(self.agent.chat_history) > 20 else self.agent.chat_history
         return [
             {"role": "system", "content": system},
@@ -343,7 +321,6 @@ class BaseAgent:
             if not memories:
                 memories = await memory_manager.recall(self.agent.project_id, agent_id=self.id, limit=20)
             if memories:
-                # ponytail: inline — was from app.agents.prompt_builder import build_memories_block
                 return "\n" + "\n".join(
                     f"[{m.get('type', 'memory')}] {m.get('content', '')[:300]}"
                     for m in memories if m.get('content')
@@ -552,7 +529,6 @@ class BaseAgent:
         await self.set_status(AgentStatus.idle)
 
     def _system_prompt(self) -> str:
-        # ponytail: inline — was from app.agents.prompt_builder import build_system_prompt
         parts = [
             f"Name: {self.name}",
             f"Role: {self.agent.role}",

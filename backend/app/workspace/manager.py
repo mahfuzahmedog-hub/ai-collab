@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.event_bus import event_bus
-from app.db.repository import save_file_entry, load_file_entries, delete_file_entry
+from app.db.vault import save_file_entry, load_file_entries, delete_file_entry
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +118,6 @@ async def get_file_tree(project_id: str) -> list[dict[str, Any]]:
         root = to_list(tree)
         return root["children"] if root.get("children") else []
 
-    # Fallback to filesystem scan
     try:
         files = await list_files(project_id)
     except Exception as e:
@@ -154,7 +153,6 @@ async def get_file_tree(project_id: str) -> list[dict[str, Any]]:
         }
 
     root = to_list(tree)
-    # Sync scanned files to DB for next time
     if files:
         for f in files:
             try:

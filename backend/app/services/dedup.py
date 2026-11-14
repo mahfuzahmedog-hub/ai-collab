@@ -2,7 +2,7 @@ import asyncio
 import logging
 from collections import defaultdict
 
-from app.db.repository import load_project_agents, merge_agents, load_project, load_all_project_ids
+from app.db.vault import load_project_agents, merge_agents, load_project, load_all_project_ids
 from app.models.agent import normalize_name
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,6 @@ async def deduplicate_project(project_id: str):
     if len(agents) < 2:
         return
 
-    # Group by normalized_name
     groups = defaultdict(list)
     for a in agents:
         norm = a.normalized_name or normalize_name(a.name)
@@ -35,7 +34,6 @@ async def deduplicate_project(project_id: str):
     for norm, group in groups.items():
         if len(group) < 2:
             continue
-        # Sort by created_at, keep the oldest as survivor
         group.sort(key=lambda a: a.created_at or "")
         survivor = group[0]
         logger.info("Dedup: Project %s — found %d agents with name '%s'. Keeping %s, merging others.",
