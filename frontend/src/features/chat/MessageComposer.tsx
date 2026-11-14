@@ -36,7 +36,6 @@ export function MessageComposer({
       .slice(0, 6);
   }, [mentionQuery, agents]);
 
-  // Auto-grow
   useEffect(() => {
     const ta = taRef.current;
     if (!ta) return;

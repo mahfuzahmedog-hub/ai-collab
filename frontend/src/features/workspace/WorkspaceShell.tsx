@@ -29,7 +29,6 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
       <div className="flex flex-1 overflow-hidden min-h-0">
         <ServerRail />
 
-        {/* Left nav — collapsible, hidden below md */}
         {leftCollapsed ? (
           <button
             onClick={toggleLeftCollapsed}
@@ -44,7 +43,6 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           </div>
         )}
 
-        {/* Resizable main + right context region */}
         <PanelGroup direction="horizontal" className="flex-1 min-w-0">
           <Panel defaultSize={75} minSize={30} className="min-w-0">
             <main className="h-full overflow-hidden min-w-0 flex flex-col bg-dark-950">
@@ -86,7 +84,6 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
       <StatusBar />
       <ApprovalDialog />
 
-      {/* M4 / M5 overlays */}
       <AgentProfile />
       <NotificationCenter />
       <CommandPalette />

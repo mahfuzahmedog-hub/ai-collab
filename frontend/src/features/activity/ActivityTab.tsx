@@ -17,7 +17,6 @@ function exportCSV(data: Record<string, any>[], filename: string) {
   URL.revokeObjectURL(url);
 }
 
-// M6: dashboard parity inside the persistent workspace shell (Activity tab).
 export function ActivityTab() {
   const agents = useStore((s) => s.agents);
   const logs = useStore((s) => s.executionLogs);

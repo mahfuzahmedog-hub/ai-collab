@@ -2,54 +2,41 @@ import { create } from "zustand";
 import type { Agent, Task, Message, Project, AgentStatus, Channel, FileNode, Thread, ExecutionLog, Notification, Approval, LifecycleAudit, ToolCall, Memory, Skill, UserProfile, ActivityEntry } from "@/types";
 
 interface AppState {
-  // Project state
   projects: Project[];
   activeProjectId: string | null;
   project: Project | null;
 
-  // Channel state
   channels: Channel[];
   activeChannel: string;
 
-  // Channel tree
   collapsedCategories: Record<string, boolean>;
 
-  // Threads
   threads: Thread[];
   activeThread: string | null;
 
-  // Agents, tasks, messages
   agents: Agent[];
   tasks: Task[];
   messages: Message[];
 
-  // File tree
   files: FileNode[];
 
-  // Observability / ops
   executionLogs: ExecutionLog[];
   notifications: Notification[];
   approvals: Approval[];
   lifecycleAudits: LifecycleAudit[];
 
-  // Tool calls
   toolCalls: ToolCall[];
 
-  // Activity feed
   activityFeed: ActivityEntry[];
 
-  // Knowledge
   memories: Memory[];
   skills: Skill[];
   userProfile: UserProfile | null;
 
-  // Streaming
   streamingChunk: { agentId: string; content: string; done: boolean } | null;
 
-  // Connection
   connected: boolean;
 
-  // UI state
   activeTab: string;
 
   addActivityEntry: (e: ActivityEntry) => void;
@@ -60,26 +47,21 @@ interface AppState {
   setSkills: (s: Skill[]) => void;
   setUserProfile: (p: UserProfile | null) => void;
 
-  // Workspace shell UI (M1)
   panelSizes: Record<string, number>;
   leftCollapsed: boolean;
   rightCollapsed: boolean;
   commandPaletteOpen: boolean;
 
-  // Files (M2)
   fileContents: Record<string, string>;
   selectedFile: string | null;
 
-  // Notifications / agent profile UI (M4/M5)
   notificationsOpen: boolean;
   activeAgentProfile: string | null;
 
-  // Zen LLM settings
   settingsPanelOpen: boolean;
   zenApiKey: string | null;
   zenConnected: boolean;
 
-  // Actions
   setProjects: (p: Project[]) => void;
   setActiveProjectId: (id: string) => void;
   setProject: (p: Project) => void;

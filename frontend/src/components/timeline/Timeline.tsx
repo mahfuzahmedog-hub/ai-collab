@@ -16,19 +16,16 @@ export function Timeline() {
   const threads = useStore((s) => s.threads);
   const endRef = useRef<HTMLDivElement>(null);
 
-  // Filter messages by active channel, excluding thread replies.
   // ponytail: cap the rendered window to the last 300 for perf instead of a
   // full virtualization dep; upgrade path is react-window if channels get huge.
   const channelMessages = messages
     .filter((m) => m.channel === activeChannel && !m.thread_id)
     .slice(-300);
 
-  // Get thread messages for active thread
   const threadMessages = activeThread
     ? messages.filter((m) => m.thread_id === activeThread)
     : [];
 
-  // Auto-scroll
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [channelMessages, streamingChunk, threadMessages]);
@@ -37,7 +34,6 @@ export function Timeline() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-dark-950">
-      {/* Channel header */}
       <div className="px-4 py-3 border-b border-dark-700 bg-dark-900">
         <div className="flex items-center gap-3">
           <span className="text-primary-400 font-mono text-sm">{activeChannel.startsWith("#") ? activeChannel : `#${activeChannel}`}</span>
@@ -48,9 +44,7 @@ export function Timeline() {
         </div>
       </div>
 
-      {/* Body: message list + thread panel side-by-side */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Message list */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {channelMessages.length === 0 && !streamingChunk && (
             <div className="flex flex-col items-center justify-center h-full text-dark-500">
@@ -92,11 +86,9 @@ export function Timeline() {
           <div ref={endRef} />
         </div>
 
-        {/* Thread panel */}
         <ThreadView />
       </div>
 
-      {/* Input bar */}
       <div className="p-4 border-t border-dark-700 bg-dark-900">
         <MessageComposer
           channel={activeChannel}

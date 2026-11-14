@@ -158,7 +158,6 @@ export function KanbanBoard() {
     return a ? a.display_name || a.name : id;
   };
 
-  // Map every non-cancelled task to its column; cancelled tasks are hidden.
   const tasksByColumn = useMemo(() => {
     const map: Record<string, Task[]> = {};
     for (const col of columns) map[col.id] = [];

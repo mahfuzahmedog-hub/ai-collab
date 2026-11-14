@@ -7,7 +7,6 @@
   --foreground: 255, 255, 255;
   --background: 10, 10, 10;
 
-  /* Design tokens — map to existing dark palette (no visual change). */
   --dark-950: #0a0a0a;
   --dark-900: #111111;
   --dark-800: #1a1a1a;
@@ -22,7 +21,6 @@
   --primary-400: #60a5fa;
   --primary-600: #2563eb;
 
-  /* Semantic tokens (extension point for light mode later). */
   --color-bg: #0a0a0a;
   --color-surface: #111111;
   --color-border: #2a2a2a;

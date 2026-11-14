@@ -27,7 +27,6 @@ export function CommandPalette() {
   const setActiveChannel = useStore((s) => s.setActiveChannel);
   const setActiveAgentProfile = useStore((s) => s.setActiveAgentProfile);
 
-  // workspaceId from the route path /workspace/{id}
   const workspaceMatch = pathname.match(/^\/workspace\/([^/]+)/);
   const workspaceId = workspaceMatch ? workspaceMatch[1] : null;
 

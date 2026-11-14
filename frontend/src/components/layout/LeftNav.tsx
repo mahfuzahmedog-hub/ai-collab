@@ -72,7 +72,6 @@ export function LeftNav() {
 
   return (
     <aside className="w-56 flex-shrink-0 bg-dark-900 border-r border-dark-700 flex flex-col h-full">
-      {/* Project header */}
       <div className="p-4 border-b border-dark-700">
         <div className="flex items-center gap-2 mb-3">
           <Hash className="w-5 h-5 text-primary-400" />
@@ -83,7 +82,6 @@ export function LeftNav() {
         )}
       </div>
 
-      {/* Channels */}
       <div className="overflow-y-auto p-2 flex-1">
         <div className="flex items-center justify-between mb-2 px-2">
           <span className="text-xs font-semibold text-dark-400 uppercase tracking-wider">Channels</span>
@@ -147,7 +145,6 @@ export function LeftNav() {
           {uncategorized.map((ch) => renderChannel(ch, 0))}
         </ul>
 
-        {/* Direct Messages */}
         {(coworker || agentList.length > 0) && (
           <>
             <div className="flex items-center justify-between mb-2 px-2">
@@ -187,7 +184,6 @@ export function LeftNav() {
         )}
       </div>
 
-      {/* Connection status */}
       <div className="p-3 border-t border-dark-700">
         <div className="flex items-center gap-2 text-xs text-dark-400">
           <span

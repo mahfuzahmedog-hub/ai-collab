@@ -1,5 +1,3 @@
-// Design tokens — mirror the existing Tailwind dark palette as named constants.
-// Non-visual refactor + extension point for light mode later.
 
 export const dark = {
   dark950: "#0a0a0a",

@@ -40,7 +40,6 @@ export function WorkspaceSwitcher() {
     favorites: [],
   };
 
-  // Capability flags derived from data.
   const canCreateWorkspace = false;
   const canSwitchWorkspace = workspaces.length > 1;
   const canManageOrgs = false;
